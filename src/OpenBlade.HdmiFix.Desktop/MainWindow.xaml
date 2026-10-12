@@ -1,0 +1,232 @@
+<Window x:Class="OpenBlade.HdmiFix.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+        Title="OpenBlade HDMI Fix"
+        Width="720"
+        Height="760"
+        MinWidth="560"
+        MinHeight="520"
+        Background="{StaticResource AppBackgroundBrush}"
+        Foreground="{StaticResource ForegroundBrush}"
+        FontFamily="Segoe UI"
+        FontSize="14"
+        WindowStartupLocation="CenterScreen"
+        Closing="Window_Closing"
+        Loaded="Window_Loaded">
+  <Window.Resources>
+    <Style TargetType="TextBlock">
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style x:Key="SectionLabelStyle" TargetType="TextBlock">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+    <Style x:Key="MutedTextStyle" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+      <Setter Property="LineHeight" Value="21" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style x:Key="CardStyle" TargetType="Border">
+      <Setter Property="Background" Value="White" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="20" />
+    </Style>
+    <Style TargetType="Button">
+      <Setter Property="MinHeight" Value="44" />
+      <Setter Property="MinWidth" Value="112" />
+      <Setter Property="Padding" Value="16,8" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style TargetType="ComboBox">
+      <Setter Property="MinHeight" Value="44" />
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+  </Window.Resources>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled"
+                PanningMode="VerticalOnly">
+    <Grid Margin="28">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+
+      <StackPanel Grid.Row="0" Margin="0,0,0,16">
+        <Border x:Name="PreviewBanner"
+                Visibility="Collapsed"
+                HorizontalAlignment="Left"
+                Margin="0,0,0,12"
+                Padding="10,5"
+                CornerRadius="4"
+                Background="#E8F0FC"
+                BorderBrush="#9BBBE9"
+                BorderThickness="1">
+          <TextBlock Text="Preview data. No device changes."
+                     FontSize="12"
+                     FontWeight="Bold"
+                     Foreground="#174A91" />
+        </Border>
+        <TextBlock Text="HDMI monitor fix"
+                   FontSize="28"
+                   FontWeight="SemiBold"
+                   LineHeight="34" />
+        <TextBlock Margin="0,8,0,0"
+                   Style="{StaticResource MutedTextStyle}"
+                   Text="Patch a saved HDMI monitor." />
+      </StackPanel>
+
+      <Border x:Name="StatusCard"
+              Grid.Row="1"
+              Margin="0,0,0,12"
+              Style="{StaticResource CardStyle}"
+              automation:AutomationProperties.LiveSetting="Polite"
+              automation:AutomationProperties.Name="Current scan status">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <ProgressBar x:Name="BusyIndicator"
+                       Grid.Column="0"
+                       Width="32"
+                       Height="6"
+                       Margin="0,7,16,0"
+                       VerticalAlignment="Top"
+                       IsIndeterminate="True"
+                       Visibility="Collapsed"
+                       automation:AutomationProperties.Name="OpenBlade is working" />
+          <StackPanel Grid.Column="1">
+            <TextBlock Text="Status" FontWeight="SemiBold" />
+            <TextBlock x:Name="StatusText"
+                       Margin="0,5,0,0"
+                       Style="{StaticResource MutedTextStyle}"
+                       Text="Scanning saved monitors…" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <StackPanel Grid.Row="2" Margin="0,0,0,12">
+        <Label Margin="0,0,0,8"
+               Padding="0"
+               FontWeight="SemiBold"
+               Target="{Binding ElementName=MonitorSelector}">
+          <AccessText Text="_Saved monitor" />
+        </Label>
+        <ComboBox x:Name="MonitorSelector"
+                  SelectionChanged="MonitorSelector_SelectionChanged"
+                  automation:AutomationProperties.Name="Saved monitor"
+                  automation:AutomationProperties.HelpText="Shows monitors connected now and monitors saved from earlier.">
+          <ComboBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock TextWrapping="Wrap">
+                <TextBlock.ToolTip>
+                  <ToolTip>
+                    <TextBlock>
+                      <Run Text="{Binding Name}" /><Run Text=" · " /><Run Text="{Binding ConnectionLabel}" /><Run Text=" · " /><Run Text="{Binding InstanceLabel}" />
+                    </TextBlock>
+                  </ToolTip>
+                </TextBlock.ToolTip>
+                <Run Text="{Binding Name}" /><LineBreak /><Run Text="{Binding ConnectionLabel}" /><Run Text=" · " /><Run Text="{Binding InstanceLabel}" />
+              </TextBlock>
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <TextBlock Margin="0,8,0,0"
+                   Style="{StaticResource MutedTextStyle}"
+                   Text="Previously connected monitors remain in this list." />
+      </StackPanel>
+
+      <Border Grid.Row="3" Margin="0,0,0,12" Style="{StaticResource CardStyle}">
+        <StackPanel>
+          <TextBlock x:Name="MonitorNameText"
+                     FontSize="18"
+                     FontWeight="SemiBold"
+                     Text="No monitor selected" />
+          <TextBlock x:Name="MonitorStatusText"
+                     Margin="0,5,0,0"
+                     FontWeight="SemiBold"
+                     Text="Refresh to find saved monitors." />
+          <Grid Margin="0,16,0,0">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="128" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Row="0" Grid.Column="0" Foreground="{StaticResource MutedBrush}" Text="Connection" />
+            <TextBlock x:Name="ConnectionText" Grid.Row="0" Grid.Column="1" Text="Unknown" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="Saved connection" />
+            <TextBlock x:Name="InstanceLabelText" Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" Text="None" />
+          </Grid>
+          <TextBlock x:Name="MonitorDetailsText"
+                     Margin="0,16,0,0"
+                     Style="{StaticResource MutedTextStyle}"
+                     Text="The scan is read-only." />
+        </StackPanel>
+      </Border>
+
+      <StackPanel Grid.Row="4" Margin="0,0,0,16">
+        <WrapPanel>
+          <Button x:Name="PatchButton"
+                  Margin="0,0,8,8"
+                  Content="_Patch"
+                  Click="PatchButton_Click"
+                  automation:AutomationProperties.HelpText="Patch the selected saved monitor and create a backup." />
+          <Button x:Name="RestoreButton"
+                  Margin="0,0,8,8"
+                  Content="_Restore"
+                  Click="RestoreButton_Click"
+                  automation:AutomationProperties.HelpText="Restore the selected saved monitor from its backup." />
+          <Button x:Name="RefreshButton"
+                  Margin="0,0,0,8"
+                  Content="Re_fresh"
+                  Click="RefreshButton_Click"
+                  automation:AutomationProperties.HelpText="Scan saved monitors again." />
+        </WrapPanel>
+        <TextBlock Style="{StaticResource MutedTextStyle}"
+                   Text="Keep the affected monitor unplugged until you have verified the patch or restore." />
+      </StackPanel>
+
+      <Expander x:Name="DiagnosticsExpander"
+                Grid.Row="5"
+                Header="Backups and diagnostics"
+                automation:AutomationProperties.Name="Backups and diagnostics">
+        <Border Margin="0,8,0,0" Style="{StaticResource CardStyle}">
+          <StackPanel>
+            <TextBlock Text="Sanitized diagnostic details" Style="{StaticResource SectionLabelStyle}" />
+            <TextBox x:Name="DiagnosticsText"
+                     MinHeight="96"
+                     Padding="10"
+                     IsReadOnly="True"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"
+                     automation:AutomationProperties.Name="Sanitized diagnostic details" />
+            <WrapPanel Margin="0,12,0,0">
+              <Button x:Name="OpenBackupButton"
+                      Margin="0,0,8,8"
+                      Content="_Open backup folder"
+                      Click="OpenBackupButton_Click" />
+              <Button x:Name="CopyDiagnosticsButton"
+                      Margin="0,0,0,8"
+                      Content="_Copy details"
+                      Click="CopyDiagnosticsButton_Click" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </Expander>
+    </Grid>
+  </ScrollViewer>
+</Window>
