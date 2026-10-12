@@ -2,6 +2,31 @@
 param()
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
+
+function Get-SourceCommit {
+    $commit = & git -C $taskRoot rev-parse --verify HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to read the source commit. Run publish from a Git worktree.' }
+    return ([string]$commit).Trim()
+}
+
+function Assert-CleanSourceState {
+    param([string]$ExpectedCommit)
+
+    $currentCommit = Get-SourceCommit
+    if ($ExpectedCommit -and $currentCommit -ne $ExpectedCommit) {
+        throw 'The source commit changed during publishing. Discard this payload and publish again from one unchanged commit.'
+    }
+
+    $changes = @(& git -C $taskRoot status --porcelain=v1 --untracked-files=all)
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to check the source worktree. Run publish from a Git worktree.' }
+    if ($changes.Count -ne 0) {
+        throw 'Publishing requires a clean source worktree. Commit or remove all tracked and untracked source changes, then try again.'
+    }
+
+    return $currentCommit
+}
+
+$sourceCommit = Assert-CleanSourceState
 [xml]$properties = Get-Content -LiteralPath (Join-Path $taskRoot 'Directory.Build.props')
 $version = [string]$properties.Project.PropertyGroup.Version
 $output = Join-Path $taskRoot 'artifacts\publish'
@@ -29,8 +54,7 @@ foreach ($runtimePackage in $runtimePackages) {
     if ($runtimeNotices.Count -eq 0) { throw "Missing runtime license: $($runtimePackage.name)" }
     foreach ($runtimeNotice in $runtimeNotices) { Copy-Item -LiteralPath $runtimeNotice.FullName -Destination $noticePath }
 }
-$sourceCommit = & git -C $taskRoot rev-parse HEAD
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Assert-CleanSourceState -ExpectedCommit $sourceCommit | Out-Null
 $provenance = @{ version = $version; sourceCommit = [string]$sourceCommit; runtimePackages = $runtimePackages } | ConvertTo-Json -Depth 5
 [IO.File]::WriteAllText((Join-Path $output 'build.json'), $provenance + "`r`n", [Text.UTF8Encoding]::new($false))
 Compress-Archive -LiteralPath $output -DestinationPath $archive

@@ -17,6 +17,9 @@ jobs:
       - run: dotnet restore OpenBlade.HdmiFix.slnx -p:NuGetAudit=false
       - run: dotnet build OpenBlade.HdmiFix.slnx -c Release -p:NuGetAudit=false --no-restore
       - run: dotnet test OpenBlade.HdmiFix.slnx -c Release -p:NuGetAudit=false --no-build --no-restore
+      - name: Check package provenance guards
+        shell: pwsh
+        run: ./build/Publish.Tests.ps1
       - name: Package Windows app
         shell: pwsh
         run: ./build/Publish.ps1
