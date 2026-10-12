@@ -54,7 +54,7 @@ public sealed class PatcherBackend : IPatcherBackend
                 var plan = EdidPatchPlanner.Plan(state.Edid);
                 var name = EdidPatchPlanner.MonitorName(state.Edid);
                 if (string.IsNullOrWhiteSpace(name))
-                    name = id.StartsWith(@"DISPLAY\SAM7463\", StringComparison.OrdinalIgnoreCase) ? "Samsung G93SC (SAM7463)" : id.Split('\\')[1];
+                    name = id.Split('\\')[1];
                 var candidates = inventory.RecoverableFor(state);
                 var backup = candidates.Length == 1 ? candidates[0] : null;
                 var canOperate = blade && trustedBackups && connected == false;
@@ -100,16 +100,18 @@ public sealed class PatcherBackend : IPatcherBackend
                     details += " Unplug this monitor to use Patch or Restore.";
                 if (connected is null) details += " The app must check the connection before making changes.";
                 views.Add(new(id, name, connection, instanceLabel, status, details, canPatch, canRestore,
-                    backup is null ? null : Path.Combine(BackupDirectory, backup.Id + ".json")));
+                    backup is null ? null : Path.Combine(BackupDirectory, backup.Id + ".json"),
+                    plan.Disposition is PatchDisposition.Ready or PatchDisposition.AlreadyCapped || backup is not null
+                        ? MonitorWarnings.Unvalidated : string.Empty));
             }
             catch (Exception e) when (IsExpected(e))
             {
                 views.Add(new(id, id.Split('\\')[1], connection, instanceLabel, "Saved entry unavailable",
-                    "Windows has no complete, readable capability data or recognized override for this entry. Keep the affected monitor unplugged. Patching is unavailable.", false, false, null));
+                    "Windows has no complete, readable capability data matching this entry, or its override isn't recognized. Keep the affected monitor unplugged. Patching is unavailable.", false, false, null));
             }
         }
         if (views.Count == 0) notices.Add("Windows has no saved monitors. Keep the crashing monitor unplugged. The app needs its previously saved capability data to patch it.");
-        return new(views.OrderByDescending(v => v.InstanceId.StartsWith(@"DISPLAY\SAM7463\", StringComparison.OrdinalIgnoreCase))
+        return new(views.OrderByDescending(v => v.CanPatch || v.CanRestore)
             .ThenBy(v => v.DisplayLabel, StringComparer.OrdinalIgnoreCase).ToArray(), string.Join(" ", notices));
     }
 
@@ -172,6 +174,7 @@ public sealed class PatcherBackend : IPatcherBackend
         return $"OpenBlade HDMI Fix {version}\nMonitor ID: {monitor.InstanceId.Split('\\')[1]}\n"
             + $"Connection: {monitor.ConnectionLabel}\nState: {monitor.Status}\n"
             + $"Patch available: {monitor.CanPatch}\nRestore available: {monitor.CanRestore}\n"
+            + (string.IsNullOrEmpty(monitor.ValidationWarning) ? "" : $"Validation: {monitor.ValidationWarning}\n")
             + "Raw EDID, serials, device instance IDs, and local paths are omitted.";
     }
 

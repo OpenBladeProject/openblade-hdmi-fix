@@ -27,11 +27,12 @@ internal sealed class MonitorRegistry : IMonitorOverrideStore
 
     public MonitorState Read(string instanceId)
     {
-        ValidateReadPath(instanceId);
+        MonitorInstance.Validate(instanceId);
         using var key = Registry.LocalMachine.OpenSubKey(ParametersPath(instanceId));
         if (key is null) throw new InvalidDataException("Windows has no cached device parameters for this entry.");
         if (key.GetValue("EDID") is not byte[] edid || edid.Length > 32768)
             throw new InvalidDataException("Windows has no complete cached EDID for this entry.");
+        MonitorInstance.ValidateEdid(instanceId, edid);
         using var overrides = key.OpenSubKey("EDID_OVERRIDE");
         var blocks = new Dictionary<int, byte[]>();
         if (overrides is not null)
@@ -101,13 +102,7 @@ internal sealed class MonitorRegistry : IMonitorOverrideStore
     }
 
     private static string ParametersPath(string instanceId) => $@"SYSTEM\CurrentControlSet\Enum\{instanceId}\Device Parameters";
-    private static void ValidateReadPath(string instanceId)
-    {
-        var parts = instanceId.Split('\\');
-        if (parts.Length != 3 || parts[0] != "DISPLAY" || parts.Skip(1).Any(p => p.Length == 0
-            || p.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('&' or '_' or '-' or '.')) || p is "." or ".."))
-            throw new InvalidDataException("The saved monitor entry has an invalid identity.");
-    }
+
 }
 
 internal static class PresentMonitorDevices

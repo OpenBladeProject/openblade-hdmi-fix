@@ -201,13 +201,81 @@ public sealed class OverrideOperationsTests
     [Theory]
     [InlineData(@"SYSTEM\CurrentControlSet\Enum\DISPLAY\SAM7463\x")]
     [InlineData(@"DISPLAY\SAM7463\x\Device Parameters")]
-    [InlineData(@"DISPLAY\OTH1234\x")]
     [InlineData(@"DISPLAY\SAM7463\..")]
+    [InlineData(@"DISPLAY\GS5B09\x")]
+    [InlineData(@"DISPLAY\GSM5B0Z\x")]
+    [InlineData(@"DISPLAY\G1M5B09\x")]
+    [InlineData(@"DISPLAY\GSM5B09\.")]
+    [InlineData(@"DISPLAY\GSM5B09\x/y")]
+    [InlineData(@"DISPLAY\GSM5B09\x:Device Parameters")]
+    [InlineData(@"DISPLAY\GSM5B09\")]
     public void Apply_RejectsAnUnboundedRegistryTarget(string target)
     {
         var store = new MemoryMonitor();
         Assert.Throws<InvalidDataException>(() => OverrideOperations.Apply(store, new MemoryBackups(), target, store.State.Fingerprint));
         Assert.Equal(0, store.WriteCount);
+    }
+
+    [Fact]
+    public void ApplyAndRestore_OtherManufacturer_BindsToItsOwnEdidAndBackup()
+    {
+        const string other = @"DISPLAY\GSM5B09\5&fixture&0&UID2";
+        byte[] edid = OtherEdid();
+        var store = new MemoryMonitor { State = new(other, edid, OverrideState.Empty) };
+        var backups = new MemoryBackups();
+        store.BeforeWrite = () => Assert.Equal("Prepared", Assert.Single(backups.Items).Value.Stage);
+        var backup = OverrideOperations.Apply(store, backups, other, store.State.Fingerprint);
+        backup.Validate();
+        Assert.Equal(other, backup.InstanceId);
+        Assert.Equal(edid, backup.OriginalEdid);
+        Assert.True(OverrideOperations.CanRestore(store.State, backup));
+        OverrideOperations.Restore(store, backups, backup, store.State.Fingerprint);
+        Assert.Equal(1, store.WriteCount);
+        Assert.Equal(1, store.RemoveCount);
+        Assert.Empty(store.State.Overrides.Blocks);
+        Assert.Equal(edid, store.State.Edid);
+    }
+
+    [Fact]
+    public void Apply_MismatchedEdidModel_RefusesBeforeBackupOrWrite()
+    {
+        const string other = @"DISPLAY\GSM5B09\5&fixture&0&UID2";
+        var store = new MemoryMonitor { State = new(other, Edid(), OverrideState.Empty) };
+        var backups = new MemoryBackups();
+        Assert.Throws<InvalidDataException>(() => OverrideOperations.Apply(store, backups, other, store.State.Fingerprint));
+        Assert.Empty(backups.Items);
+        Assert.Equal(0, store.WriteCount);
+    }
+
+    [Fact]
+    public void Backup_OtherManufacturer_DoesNotUseLegacyZeroBoundaryRecovery()
+    {
+        PatchBackup legacy = LegacyZeroBoundaryBackup();
+        byte[] other = OtherEdid();
+        other[130] = 0;
+        SetChecksum(other, 1);
+        var backup = legacy with { InstanceId = @"DISPLAY\GSM5B09\5&fixture&0&UID2", OriginalEdid = other };
+        Assert.Throws<InvalidDataException>(backup.Validate);
+        var state = new MonitorState(backup.InstanceId, other, backup.PatchedOverrides.Copy());
+        Assert.False(OverrideOperations.CanRestore(state, backup));
+    }
+
+    [Fact]
+    public void Backup_ModelDoesNotMatchOriginal_RefusesRecovery()
+    {
+        var store = new MemoryMonitor();
+        var backup = OverrideOperations.Apply(store, new MemoryBackups(), Instance, store.State.Fingerprint);
+        var mismatch = backup with { InstanceId = @"DISPLAY\GSM5B09\5&fixture&0&UID2" };
+        Assert.Throws<InvalidDataException>(mismatch.Validate);
+        Assert.False(OverrideOperations.CanRestore(store.State with { InstanceId = mismatch.InstanceId }, mismatch));
+    }
+
+    private static byte[] OtherEdid()
+    {
+        byte[] data = Edid();
+        data[8] = 0x1E; data[9] = 0x6D; data[10] = 0x09; data[11] = 0x5B;
+        SetChecksum(data, 0);
+        return data;
     }
 
     private sealed class MemoryMonitor : IMonitorOverrideStore

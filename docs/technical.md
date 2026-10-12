@@ -2,9 +2,9 @@
 
 Windows stores monitor instances under `HKLM\SYSTEM\CurrentControlSet\Enum\DISPLAY`. The app enumerates those saved entries, including disconnected monitors, then reads each entry's `Device Parameters\EDID`. SetupAPI's present monitor list supplies the connection label. A failure to obtain that list disables mutation.
 
-The first profile recognizes manufacturer `SAM`, product `0x7463`, a single HDMI Forum VSDB with OUI `0xC45DD8`, DSC 1.2 support, and two FRL fields at code 5. It validates the EDID header, exact extension count, every 128-byte checksum, and CTA data-block boundaries. Multiple Forum blocks, an alternative Forum SCDB, truncated data, and unexpected rate pairs are refused. Code 4 in both fields is reported as already capped.
+The patch accepts any monitor manufacturer and product with a single HDMI Forum VSDB with OUI `0xC45DD8`, DSC 1.2 support, and two FRL fields at code 5. It validates the EDID header, manufacturer encoding, exact extension count, every 128-byte checksum, and CTA data-block boundaries. The manufacturer and product decoded from the EDID must match the selected saved Windows instance. Every eligible monitor displays an unvalidated warning; this app has no physically validated monitor models. Multiple Forum blocks, an alternative Forum SCDB, truncated data, and unexpected rate pairs are refused. Code 4 in both fields is reported as already capped.
 
-A CTA data-block offset of zero means no data blocks or detailed timing descriptors. New patches require zero padding in that extension and never interpret it as capabilities. Schema-version-1 backup verification retains the earlier parser's zero-offset behavior only for recovery of an existing exact two-field override. It cannot enable a new patch; restoration still requires the identical saved EDID and override.
+A CTA data-block offset of zero means no data blocks or detailed timing descriptors. New patches require zero padding in that extension and never interpret it as capabilities. Schema-version-1 backup verification retains the earlier parser's zero-offset behavior only for recovery of an existing exact SAM7463 two-field override. Other monitor backups use the strict current parser. It cannot enable a new patch; restoration still requires the identical saved EDID and override.
 
 Within the structured Forum block, the high nibbles at indexes 7 and 12 (counting its CTA block header) change from 5 to 4. Their low nibbles remain intact. The patch also recalculates the containing extension checksum. Every other byte remains unchanged, including the base EDID, HDMI physical address, DSC flags and parameters, timings, HDR, audio, VRR, and unknown extensions.
 
@@ -18,7 +18,7 @@ Saved records do not reliably identify a physical HDMI port or adapter. The app 
 
 ## Administrator operation and recovery
 
-The WPF window runs at normal integrity. Patch and Restore start a short-lived copy of the same executable through Windows UAC. Its internal entry point accepts only the fixed operation, exact `DISPLAY\SAM7463\<instance>` identity, displayed EDID/override fingerprints, a backup ID for Restore, and the initiating user SID. It never accepts a registry root, command, or output path.
+The WPF window runs at normal integrity. Patch and Restore start a short-lived copy of the same executable through Windows UAC. Its internal entry point accepts only the fixed operation, exact `DISPLAY\<manufacturer><product>\<instance>` identity, bound to the cached EDID, displayed EDID/override fingerprints, a backup ID for Restore, and the initiating user SID. It never accepts a registry root, command, or output path.
 
 The child reconstructs the patch, checks Razer Blade identity, verifies disconnection again, checks the displayed state, and saves a durable `Prepared` record before writing. The registry store repeats disconnection and expected-state checks immediately before mutation. A named mutex serializes this app's administrator operations. Readback verifies the complete override state before recording `Applied`; the normal parent independently checks it.
 

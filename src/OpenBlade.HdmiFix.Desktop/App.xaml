@@ -6,6 +6,9 @@
     <SolidColorBrush x:Key="ForegroundBrush" Color="#17212D" />
     <SolidColorBrush x:Key="MutedBrush" Color="#46566A" />
     <SolidColorBrush x:Key="BorderBrush" Color="#D7DDE5" />
+    <SolidColorBrush x:Key="WarningBackgroundBrush" Color="#FFF4D6" />
+    <SolidColorBrush x:Key="WarningBorderBrush" Color="#C68B18" />
+    <SolidColorBrush x:Key="WarningForegroundBrush" Color="#604300" />
     <SolidColorBrush x:Key="AccentBrush" Color="#2767C5" />
   </Application.Resources>
 </Application>

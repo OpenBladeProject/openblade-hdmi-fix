@@ -205,23 +205,52 @@ public sealed class EdidPatchTests
         Assert.Equal(PatchDisposition.Invalid, EdidPatchPlanner.Plan(edid).Disposition);
     }
 
-    [Fact]
-    public void Plan_DifferentManufacturer_ReturnsUnsupported()
+    [Theory]
+    [InlineData(0x1E6D, 0x5B09, "GSM5B09")]
+    [InlineData(0x10AC, 0xA1B2, "DELA1B2")]
+    [InlineData(0x4C2D, 0x7464, "SAM7464")]
+    public void Plan_OtherMonitorModels_PatchTheirOwnStructuredCapabilities(int manufacturer, int product, string model)
     {
-        byte[] edid = CreateEdid(CreateForumDataBlock(), manufacturer: 0x4C2E);
-
+        byte[] edid = CreateEdid(CreateForumDataBlock(), manufacturer: (ushort)manufacturer, product: (ushort)product);
         EdidPatchPlan plan = EdidPatchPlanner.Plan(edid);
+        Assert.Equal(PatchDisposition.Ready, plan.Disposition);
+        Assert.Equal(model, EdidPatchPlanner.MonitorModelId(edid));
+        Assert.Equal(edid[..128], plan.Patched[..128]);
+        Assert.Equal([1], plan.ChangedBlocks);
+        Assert.Equal(3, edid.Zip(plan.Patched).Count(pair => pair.First != pair.Second));
+        AssertChecksum(plan.Patched, 1);
+    }
 
-        Assert.Equal(PatchDisposition.Unsupported, plan.Disposition);
-        Assert.Equal(edid, plan.Patched);
+    [Theory]
+    [InlineData(0)]
+    [InlineData(0x7FFF)]
+    [InlineData(0xCC2D)]
+    public void Plan_InvalidManufacturerEncoding_IsRefused(int manufacturer)
+    {
+        byte[] edid = CreateEdid(CreateForumDataBlock(), manufacturer: (ushort)manufacturer);
+        Assert.Equal(PatchDisposition.Invalid, EdidPatchPlanner.Plan(edid).Disposition);
+        Assert.Empty(EdidPatchPlanner.MonitorModelId(edid));
     }
 
     [Fact]
-    public void Plan_DifferentProduct_ReturnsUnsupported()
+    public void Plan_OtherManufacturer_StillRejectsUnsafeCapabilities()
     {
-        byte[] edid = CreateEdid(CreateForumDataBlock(), product: 0x7464);
-
-        Assert.Equal(PatchDisposition.Unsupported, EdidPatchPlanner.Plan(edid).Disposition);
+        byte[] noDsc = CreateEdid(CreateForumDataBlock(dscEnabled: false), manufacturer: 0x1E6D, product: 0x5B09);
+        byte[] wrongRate = CreateEdid(CreateForumDataBlock(6, 6), manufacturer: 0x1E6D, product: 0x5B09);
+        byte[] duplicate = CreateEdid(CreateForumDataBlock(), trailingDataBlocks: [CreateForumDataBlock()], manufacturer: 0x1E6D, product: 0x5B09);
+        Assert.All(new[] { noDsc, wrongRate, duplicate }, edid =>
+        {
+            var plan = EdidPatchPlanner.Plan(edid);
+            Assert.Equal(PatchDisposition.Unsupported, plan.Disposition);
+            Assert.Equal(edid, plan.Patched);
+        });
+        byte[] corrupt = CreateEdid(CreateForumDataBlock(), manufacturer: 0x1E6D, product: 0x5B09);
+        corrupt[200] ^= 1;
+        Assert.Equal(PatchDisposition.Invalid, EdidPatchPlanner.Plan(corrupt).Disposition);
+        byte[] badBoundary = CreateEdid(CreateForumDataBlock(), manufacturer: 0x1E6D, product: 0x5B09);
+        badBoundary[130] = 3;
+        SetChecksum(badBoundary, 1);
+        Assert.Equal(PatchDisposition.Invalid, EdidPatchPlanner.Plan(badBoundary).Disposition);
     }
 
     [Fact]

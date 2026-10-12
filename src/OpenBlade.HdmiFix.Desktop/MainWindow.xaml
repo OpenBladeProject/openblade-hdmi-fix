@@ -175,6 +175,19 @@
                      Margin="0,16,0,0"
                      Style="{StaticResource MutedTextStyle}"
                      Text="The scan is read-only." />
+          <Border x:Name="ValidationWarningBorder"
+                  Visibility="Collapsed"
+                  Margin="0,12,0,0"
+                  Padding="12"
+                  CornerRadius="4"
+                  Background="{StaticResource WarningBackgroundBrush}"
+                  BorderBrush="{StaticResource WarningBorderBrush}"
+                  BorderThickness="1"
+                  automation:AutomationProperties.LiveSetting="Polite">
+            <TextBlock x:Name="ValidationWarningText"
+                       Foreground="{StaticResource WarningForegroundBrush}"
+                       TextWrapping="Wrap" />
+          </Border>
         </StackPanel>
       </Border>
 

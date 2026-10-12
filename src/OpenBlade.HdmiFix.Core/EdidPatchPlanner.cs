@@ -20,8 +20,6 @@ public sealed record EdidPatchPlan(
 public static class EdidPatchPlanner
 {
     private const int BlockSize = 128;
-    private const ushort SupportedManufacturer = 0x4C2D; // SAM
-    private const ushort SupportedProduct = 0x7463;
     private const byte CtaExtensionTag = 0x02;
     private const byte VendorSpecificDataBlockTag = 0x03;
     private const byte ExtendedDataBlockTag = 0x07;
@@ -58,11 +56,9 @@ public static class EdidPatchPlanner
             return Result(PatchDisposition.Invalid, original, patched, validationFailure);
         }
 
-        ushort manufacturer = (ushort)((original[8] << 8) | original[9]);
-        ushort product = (ushort)(original[10] | (original[11] << 8));
-        if (manufacturer != SupportedManufacturer || product != SupportedProduct)
+        if (MonitorModelId(original).Length == 0)
         {
-            return Result(PatchDisposition.Unsupported, original, patched, "The EDID is not for the supported SAM7463 monitor.");
+            return Result(PatchDisposition.Invalid, original, patched, "The EDID manufacturer identity is invalid.");
         }
 
         var forumBlocks = new List<ForumBlock>();
@@ -148,6 +144,19 @@ public static class EdidPatchPlanner
             patched,
             [forumBlock.BlockNumber],
             "Capped the normal and DSC HDMI FRL rate fields from 5 to 4.");
+    }
+
+    public static string MonitorModelId(byte[] edid)
+    {
+        if (edid is null || !TryValidateEdid(edid, out _, out _)) return string.Empty;
+        int manufacturer = (edid[8] << 8) | edid[9];
+        int first = (manufacturer >> 10) & 31;
+        int second = (manufacturer >> 5) & 31;
+        int third = manufacturer & 31;
+        if ((manufacturer & 0x8000) != 0 || first is < 1 or > 26
+            || second is < 1 or > 26 || third is < 1 or > 26) return string.Empty;
+        int product = edid[10] | (edid[11] << 8);
+        return $"{(char)('A' + first - 1)}{(char)('A' + second - 1)}{(char)('A' + third - 1)}{product:X4}";
     }
 
     public static string MonitorName(byte[] edid)

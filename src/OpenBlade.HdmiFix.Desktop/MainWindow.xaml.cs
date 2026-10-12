@@ -127,8 +127,10 @@ public partial class MainWindow : Window
         }
 
         string action = restore ? "restore" : "patch";
+        string warning = !restore && !string.IsNullOrWhiteSpace(monitor.ValidationWarning)
+            ? monitor.ValidationWarning + "\n\n" : string.Empty;
         MessageBoxResult confirmation = MessageBox.Show(
-            $"Keep the affected monitor unplugged until you have verified this change.\n\nDo you want to {action} this saved connection?\n\n{monitor.Name}\n{monitor.ConnectionLabel}, {monitor.InstanceLabel}",
+            $"{warning}Keep the affected monitor unplugged until you have verified this change.\n\nDo you want to {action} this saved connection?\n\n{monitor.Name}\n{monitor.ConnectionLabel}, {monitor.InstanceLabel}",
             restore ? "Confirm restore" : "Confirm patch",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning,
@@ -209,6 +211,9 @@ public partial class MainWindow : Window
             MonitorDetailsText.Text = monitor.Details;
         }
 
+        ValidationWarningText.Text = monitor?.ValidationWarning ?? string.Empty;
+        ValidationWarningBorder.Visibility = string.IsNullOrWhiteSpace(ValidationWarningText.Text)
+            ? Visibility.Collapsed : Visibility.Visible;
         DiagnosticsText.Text = _backend.DiagnosticText(monitor);
         UpdateActionStates();
     }

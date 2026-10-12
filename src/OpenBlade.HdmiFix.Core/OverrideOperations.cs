@@ -47,8 +47,11 @@ public sealed record PatchBackup(
                 || b.Value is null || b.Value.Length != 128 || b.Value.Sum(x => (int)x) % 256 != 0))
                 throw new InvalidDataException("The backup contains an invalid EDID block.");
         }
-        MonitorInstance.Validate(InstanceId);
-        var plan = EdidPatchPlanner.PlanVersion1BackupRecovery(OriginalEdid);
+        MonitorInstance.ValidateEdid(InstanceId, OriginalEdid);
+        // Only the original model could have a backup from the old zero-offset parser.
+        var plan = InstanceId.Split('\\')[1].Equals("SAM7463", StringComparison.OrdinalIgnoreCase)
+            ? EdidPatchPlanner.PlanVersion1BackupRecovery(OriginalEdid)
+            : EdidPatchPlanner.Plan(OriginalEdid);
         if (plan.Disposition != PatchDisposition.Ready || plan.ChangedBlocks.Length != 1
             || OriginalOverrides.Blocks.Count != 0)
             throw new InvalidDataException("The saved backup does not describe an admitted original EDID.");
@@ -66,10 +69,20 @@ public static class MonitorInstance
         if (string.IsNullOrWhiteSpace(instanceId) || instanceId.Length > 240)
             throw new InvalidDataException("No valid saved monitor instance was selected.");
         var parts = instanceId.Split('\\');
-        if (parts.Length != 3 || parts[0] != "DISPLAY" || parts[1] != "SAM7463"
+        if (parts.Length != 3 || parts[0] != "DISPLAY" || parts[1].Length != 7
+            || parts[1][..3].Any(c => !char.IsAsciiLetter(c))
+            || parts[1][3..].Any(c => !Uri.IsHexDigit(c))
             || parts[2].Length == 0 || parts[2].Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('&' or '_' or '-' or '.'))
             || parts[2] is "." or "..")
-            throw new InvalidDataException("Only an exact saved SAM7463 monitor instance can be changed.");
+            throw new InvalidDataException("Only an exact saved DISPLAY monitor instance can be changed.");
+    }
+
+    public static void ValidateEdid(string instanceId, byte[] edid)
+    {
+        Validate(instanceId);
+        string model = EdidPatchPlanner.MonitorModelId(edid);
+        if (model.Length == 0 || !instanceId.Split('\\')[1].Equals(model, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("The saved monitor identity does not match its EDID.");
     }
 }
 
@@ -101,6 +114,7 @@ public static class OverrideOperations
         MonitorInstance.Validate(instanceId);
         var original = store.Read(instanceId);
         EnsureOriginal(original, instanceId, expectedFingerprint);
+        MonitorInstance.ValidateEdid(instanceId, original.Edid);
         var plan = EdidPatchPlanner.Plan(original.Edid);
         if (plan.Disposition != PatchDisposition.Ready || plan.ChangedBlocks.Length != 1)
             throw new InvalidOperationException(plan.Summary);

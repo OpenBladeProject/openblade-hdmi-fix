@@ -5,15 +5,16 @@ public sealed class PreviewBackend : IPatcherBackend
     private static readonly IReadOnlyList<MonitorView> PreviewMonitors =
     [
         new(
-            "DISPLAY\\SAM7463\\5&2A7B4D91&0&UID4352",
-            "Samsung Odyssey OLED G9 (G93SC)",
+            "DISPLAY\\GSM5B09\\5&2A7B4D91&0&UID4355",
+            "LG UltraGear",
             "Previously connected",
-            "Display 2 · SAM7463",
-            RecoveryMessages.ChangedStatus,
-            RecoveryMessages.ChangedDetails,
-            CanPatch: false,
+            "Display 3 · GSM5B09",
+            "Ready to patch",
+            "Lower both maximum HDMI link rates from FRL10 to FRL8 and keep DSC enabled. Resolution and refresh-rate entries, HDR, VRR, audio, and the HDMI address stay unchanged.",
+            CanPatch: true,
             CanRestore: false,
-            BackupPath: null),
+            BackupPath: null,
+            ValidationWarning: MonitorWarnings.Unvalidated),
         new(
             "DISPLAY\\BOE0BCA\\4&17DBF615&0&UID265988",
             "Built-in laptop display",
@@ -25,12 +26,12 @@ public sealed class PreviewBackend : IPatcherBackend
             CanRestore: false,
             BackupPath: null),
         new(
-            "DISPLAY\\GSM5B09\\5&2A7B4D91&0&UID4355",
-            "LG UltraGear",
+            "DISPLAY\\SAM7463\\5&2A7B4D91&0&UID4352",
+            "Samsung Odyssey OLED G9 (G93SC)",
             "Previously connected",
-            "Display 3 · GSM5B09",
-            "Saved display data is incomplete",
-            "OpenBlade does not have complete saved display data for this monitor, so it cannot be patched.",
+            "Display 2 · SAM7463",
+            RecoveryMessages.ChangedStatus,
+            RecoveryMessages.ChangedDetails,
             CanPatch: false,
             CanRestore: false,
             BackupPath: null),
@@ -42,7 +43,7 @@ public sealed class PreviewBackend : IPatcherBackend
     {
         return Task.FromResult(new MonitorScan(
             PreviewMonitors,
-            RecoveryMessages.PrivateBackups));
+            string.Empty));
     }
 
     public Task<OperationOutcome> ApplyAsync(MonitorView monitor, bool restore)
