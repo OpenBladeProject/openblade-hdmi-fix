@@ -11,7 +11,7 @@ Local checks cover:
 - WPF construction and synthetic-data rendering at normal and minimum widths, plus expanded diagnostics.
 - A self-contained Windows x64 payload.
 
-The Release solution build completed with zero warnings/errors, and 39 focused tests passed. A read-only scan on the development machine returned both a connected internal display and a previously connected saved record. No G93SC entry was present. Normal/minimum and expanded preview screenshots used synthetic data; the real scan applied no override.
+The Release solution build completed with zero warnings/errors, and 52 focused tests passed. Regression checks cover CTA zero-offset padding, recovery of version-1 backups, the 512-active-backup boundary, private account records, and changed cached EDID data. Temporary Git fixtures verify that packaging rejects dirty source and commit changes while permitting ignored build output. A read-only scan on the development machine returned both a connected internal display and a previously connected saved record. No G93SC entry was present. Normal/minimum and expanded preview screenshots used synthetic data; the real scan applied no override.
 
 Fixtures are synthetic and do not contain a real monitor serial number. A rendered preview does not validate cached EDID availability on a particular computer, UAC, installed registry permissions, or actual HDMI link negotiation.
 

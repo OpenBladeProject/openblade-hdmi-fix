@@ -113,6 +113,50 @@ public sealed class OverrideOperationsTests
     }
 
     [Fact]
+    public void Restore_AcceptsExactHistoricalVersion1ZeroBoundaryBackup()
+    {
+        PatchBackup backup = LegacyZeroBoundaryBackup();
+        var store = new MemoryMonitor
+        {
+            State = new(Instance, backup.OriginalEdid.ToArray(), backup.PatchedOverrides.Copy()),
+        };
+        var backups = new MemoryBackups();
+
+        Assert.Equal(PatchDisposition.Invalid, EdidPatchPlanner.Plan(backup.OriginalEdid).Disposition);
+        backup.Validate();
+        Assert.True(OverrideOperations.CanRestore(store.State, backup));
+
+        OverrideOperations.Restore(store, backups, backup, store.State.Fingerprint);
+
+        Assert.Empty(store.State.Overrides.Blocks);
+        Assert.Equal("Restored", backups.Items[backup.Id].Stage);
+    }
+
+    [Fact]
+    public void Restore_RefusesChangedStateOrTamperedHistoricalVersion1Backup()
+    {
+        PatchBackup backup = LegacyZeroBoundaryBackup();
+        var exact = new MonitorState(Instance, backup.OriginalEdid.ToArray(), backup.PatchedOverrides.Copy());
+
+        OverrideState foreignOverride = backup.PatchedOverrides.Copy();
+        foreignOverride.Blocks[1][20] ^= 0x01;
+        SetChecksum(foreignOverride.Blocks[1], 0);
+        Assert.False(OverrideOperations.CanRestore(exact with { Overrides = foreignOverride }, backup));
+
+        byte[] changedEdid = backup.OriginalEdid.ToArray();
+        changedEdid[20] ^= 0x01;
+        SetChecksum(changedEdid, 0);
+        Assert.False(OverrideOperations.CanRestore(exact with { Edid = changedEdid }, backup));
+
+        OverrideState tamperedPatch = backup.PatchedOverrides.Copy();
+        tamperedPatch.Blocks[1][20] ^= 0x01;
+        SetChecksum(tamperedPatch.Blocks[1], 0);
+        PatchBackup tamperedBackup = backup with { PatchedOverrides = tamperedPatch };
+        Assert.Throws<InvalidDataException>(tamperedBackup.Validate);
+        Assert.False(OverrideOperations.CanRestore(exact, tamperedBackup));
+    }
+
+    [Fact]
     public void Backup_RejectsTamperedOriginalOrPatchedContents()
     {
         var store = new MemoryMonitor();
@@ -225,5 +269,32 @@ public sealed class OverrideOperationsTests
         for (var block = 0; block < 2; block++)
             data[block * 128 + 127] = unchecked((byte)-data.AsSpan(block * 128, 127).ToArray().Sum(x => (int)x));
         return data;
+    }
+
+    private static PatchBackup LegacyZeroBoundaryBackup()
+    {
+        byte[] original = Edid();
+        original[130] = 0;
+        SetChecksum(original, 1);
+
+        byte[] patched = original.ToArray();
+        patched[139] = (byte)((patched[139] & 0x0F) | 0x40);
+        patched[144] = (byte)((patched[144] & 0x0F) | 0x40);
+        SetChecksum(patched, 1);
+
+        return new PatchBackup(
+            1,
+            Guid.NewGuid().ToString("N"),
+            Instance,
+            original,
+            OverrideState.Empty,
+            new OverrideState(true, new() { [1] = patched[128..256] }),
+            "Applied");
+    }
+
+    private static void SetChecksum(byte[] edid, int blockNumber)
+    {
+        int blockStart = blockNumber * 128;
+        edid[blockStart + 127] = unchecked((byte)-edid.AsSpan(blockStart, 127).ToArray().Sum(x => (int)x));
     }
 }

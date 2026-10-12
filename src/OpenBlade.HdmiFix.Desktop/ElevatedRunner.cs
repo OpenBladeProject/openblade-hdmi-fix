@@ -32,7 +32,12 @@ internal static class ElevatedRunner
                 {
                     if (args[4] != "-") throw new InvalidDataException("Unexpected patch arguments.");
                     var current = store.Read(args[2]);
-                    if (files.ReadAll().Any(b => OverrideOperations.CanRestore(current, b)))
+                    var inventory = files.ReadInventory();
+                    if (!inventory.AllowsNewBackup)
+                        throw new InvalidOperationException(inventory.HasPrivateBackups
+                            ? "Backups from another Windows account are present. Use the account that created them before patching."
+                            : "Restore unfinished operations before creating another backup. Existing backups can still be restored.");
+                    if (inventory.RecoverableFor(current).Length != 0)
                         throw new InvalidOperationException("An original backup requires reconciliation. Use Restore before a new patch.");
                     OverrideOperations.Apply(store, files, args[2], args[3]);
                 }

@@ -18,6 +18,8 @@ internal sealed class BackupFiles : IBackupStore
     }
     public string DirectoryPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "OpenBlade.HdmiFix.Backups");
+    private string HistoryDirectory => Path.Combine(DirectoryPath, "history-" + Convert.ToHexString(
+        System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(reader.Value)))[..16]);
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public void EnsureProtectedDirectory()
@@ -76,6 +78,30 @@ internal sealed class BackupFiles : IBackupStore
             var readback = ReadById(backup.Id);
             if (!JsonSerializer.SerializeToUtf8Bytes(readback, JsonOptions).AsSpan().SequenceEqual(data))
                 throw new IOException("The original backup could not be verified. No new patch should be attempted.");
+            if (backup.Stage == "Restored")
+            {
+                var history = new DirectoryInfo(HistoryDirectory);
+                if (!history.Exists)
+                {
+                    var historyAcl = new DirectorySecurity();
+                    historyAcl.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+                    historyAcl.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                    var inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+                    historyAcl.AddAccessRule(new(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+                        FileSystemRights.FullControl, inheritance, PropagationFlags.None, AccessControlType.Allow));
+                    historyAcl.AddAccessRule(new(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+                        FileSystemRights.FullControl, inheritance, PropagationFlags.None, AccessControlType.Allow));
+                    historyAcl.AddAccessRule(new(reader, FileSystemRights.ReadAndExecute,
+                        inheritance, PropagationFlags.None, AccessControlType.Allow));
+                    history.Create(historyAcl);
+                }
+                VerifyAcl(history);
+                var archived = Path.Combine(HistoryDirectory, backup.Id + ".json");
+                if (File.Exists(archived)) throw new InvalidDataException("A history record already uses this backup ID. Keep both records.");
+                File.Move(target, archived);
+                if (ReadById(backup.Id).Stage != "Restored")
+                    throw new IOException("The finished backup could not be verified in history.");
+            }
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
@@ -84,9 +110,26 @@ internal sealed class BackupFiles : IBackupStore
     {
         if (!Guid.TryParseExact(id, "N", out _)) throw new InvalidDataException("No valid backup was selected.");
         VerifyDirectory();
-        var file = new FileInfo(Path.Combine(DirectoryPath, id + ".json"));
+        var active = new FileInfo(Path.Combine(DirectoryPath, id + ".json"));
+        var history = new DirectoryInfo(HistoryDirectory);
+        if (history.Exists) VerifyAcl(history);
+        var archived = new FileInfo(Path.Combine(HistoryDirectory, id + ".json"));
+        if (active.Exists && archived.Exists) throw new InvalidDataException("Several files use this backup ID. Keep the backup folder.");
+        var file = active.Exists ? active : archived;
         if (!file.Exists || file.Length > 524288) throw new InvalidDataException("The original backup is missing or incomplete.");
         VerifyAcl(file);
+        // Use the initiating user's explicit payload grant even when the helper is elevated.
+        // Administrator credentials must not make its catalog differ from the normal window's.
+        var access = file.GetAccessControl(AccessControlSections.Access);
+        var rules = access.GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier))
+            .Cast<FileSystemAccessRule>().ToArray();
+        if (rules.Any(rule => rule.AccessControlType == AccessControlType.Deny
+            && (rule.FileSystemRights & FileSystemRights.ReadData) != 0))
+            throw new InvalidDataException("The backup has an unsupported read restriction. Keep the backup folder.");
+        var permitted = rules.Any(rule => !rule.IsInherited && rule.IdentityReference.Equals(reader)
+                && rule.AccessControlType == AccessControlType.Allow
+                && (rule.FileSystemRights & FileSystemRights.ReadData) != 0);
+        if (!permitted) throw new UnauthorizedAccessException("Use the Windows account that created this backup.");
         var backup = JsonSerializer.Deserialize<PatchBackup>(File.ReadAllBytes(file.FullName))
             ?? throw new InvalidDataException("The original backup is unreadable.");
         backup.Validate();
@@ -94,20 +137,14 @@ internal sealed class BackupFiles : IBackupStore
         return backup;
     }
 
-    public IReadOnlyList<PatchBackup> ReadAll()
+    public BackupInventory ReadInventory()
     {
         VerifyDirectory();
-        if (!Directory.Exists(DirectoryPath)) return [];
-        var files = Directory.EnumerateFiles(DirectoryPath, "*.json").Take(513).ToArray();
-        if (files.Length > 512) throw new InvalidDataException("Too many backup records. Preserve the folder and review it before continuing.");
-        // A corrupt record blocks mutation rather than hiding an original that might be needed for recovery.
-        var result = new List<PatchBackup>();
-        foreach (var file in files)
-        {
-            try { result.Add(ReadById(Path.GetFileNameWithoutExtension(file))); }
-            catch (UnauthorizedAccessException) { /* Another Windows account's private recovery payload. */ }
-        }
-        return result;
+        if (!Directory.Exists(DirectoryPath)) return BackupInventory.Empty;
+        // Enumerate every active original; an arbitrary discovery cutoff can hide the selected recovery.
+        // Finished history is retained separately. Legacy Restored records are excluded by the inventory.
+        return BackupInventory.Read(Directory.EnumerateFiles(DirectoryPath, "*.json")
+            .Select(Path.GetFileNameWithoutExtension).Select(id => id!), ReadById);
     }
 
     private static void VerifyAcl(FileSystemInfo item)

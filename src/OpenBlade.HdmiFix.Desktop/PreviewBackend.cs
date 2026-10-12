@@ -9,9 +9,9 @@ public sealed class PreviewBackend : IPatcherBackend
             "Samsung Odyssey OLED G9 (G93SC)",
             "Previously connected",
             "Display 2 · SAM7463",
-            "Ready to patch",
-            "The saved display data is complete. The patch changes FRL 10 to FRL 8 and keeps DSC enabled.",
-            CanPatch: true,
+            RecoveryMessages.ChangedStatus,
+            RecoveryMessages.ChangedDetails,
+            CanPatch: false,
             CanRestore: false,
             BackupPath: null),
         new(
@@ -42,7 +42,7 @@ public sealed class PreviewBackend : IPatcherBackend
     {
         return Task.FromResult(new MonitorScan(
             PreviewMonitors,
-            "Three saved monitors loaded."));
+            RecoveryMessages.PrivateBackups));
     }
 
     public Task<OperationOutcome> ApplyAsync(MonitorView monitor, bool restore)

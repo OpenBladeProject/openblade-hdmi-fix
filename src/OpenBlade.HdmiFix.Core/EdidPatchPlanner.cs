@@ -40,6 +40,15 @@ public static class EdidPatchPlanner
     private static readonly byte[] EdidHeader = [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00];
 
     public static EdidPatchPlan Plan(byte[] edid)
+        => PlanCore(edid, allowVersion1ZeroOffsetDataBlocks: false);
+
+    // Schema version 1 backups were created before zero-offset CTA blocks were
+    // excluded from patch admission. Keep that interpretation frozen here so
+    // those exact backups remain recoverable without admitting new patches.
+    internal static EdidPatchPlan PlanVersion1BackupRecovery(byte[] edid)
+        => PlanCore(edid, allowVersion1ZeroOffsetDataBlocks: true);
+
+    private static EdidPatchPlan PlanCore(byte[] edid, bool allowVersion1ZeroOffsetDataBlocks)
     {
         byte[] original = edid?.ToArray() ?? [];
         byte[] patched = original.ToArray();
@@ -72,6 +81,7 @@ public static class EdidPatchPlanner
                     blockNumber,
                     forumBlocks,
                     ref hasAlternativeForumCapabilityBlock,
+                    allowVersion1ZeroOffsetDataBlocks,
                     out string ctaFailure))
             {
                 return Result(PatchDisposition.Invalid, original, patched, ctaFailure);
@@ -228,6 +238,7 @@ public static class EdidPatchPlanner
         int blockNumber,
         List<ForumBlock> forumBlocks,
         ref bool hasAlternativeForumCapabilityBlock,
+        bool allowVersion1ZeroOffsetDataBlocks,
         out string failure)
     {
         failure = string.Empty;
@@ -237,6 +248,17 @@ public static class EdidPatchPlanner
 
         if (dtdOffset == 0)
         {
+            if (!allowVersion1ZeroOffsetDataBlocks)
+            {
+                if (edid.AsSpan(blockStart + 4, BlockSize - 5).ContainsAnyExcept((byte)0))
+                {
+                    failure = $"CTA extension block {blockNumber} has data after a zero data-block boundary.";
+                    return false;
+                }
+
+                return true;
+            }
+
             dataBlockEnd = BlockSize - 1;
         }
         else if (dtdOffset is >= 4 and <= 127)

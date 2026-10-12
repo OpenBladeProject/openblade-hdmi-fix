@@ -48,9 +48,9 @@ public sealed record PatchBackup(
                 throw new InvalidDataException("The backup contains an invalid EDID block.");
         }
         MonitorInstance.Validate(InstanceId);
-        var plan = EdidPatchPlanner.Plan(OriginalEdid);
+        var plan = EdidPatchPlanner.PlanVersion1BackupRecovery(OriginalEdid);
         if (plan.Disposition != PatchDisposition.Ready || plan.ChangedBlocks.Length != 1
-            || OriginalOverrides.Blocks.Count != 0 || (!OriginalOverrides.KeyExists && OriginalOverrides.Blocks.Count != 0))
+            || OriginalOverrides.Blocks.Count != 0)
             throw new InvalidDataException("The saved backup does not describe an admitted original EDID.");
         var expected = OverrideOperations.BuildPatchedState(OriginalOverrides, plan);
         if (expected.Fingerprint() != PatchedOverrides.Fingerprint())
@@ -145,10 +145,7 @@ public static class OverrideOperations
             throw new InvalidOperationException("The saved monitor or override changed. No restoration was attempted; keep the backup.");
         var number = backup.PatchedOverrides.Blocks.Keys.Single();
         // An interrupted apply may leave only a newly-created empty key.
-        if (backup.OriginalOverrides.Blocks.TryGetValue(number, out var original))
-            store.WriteBlock(backup.InstanceId, number, original, expectedFingerprint);
-        else
-            store.RemoveBlock(backup.InstanceId, number, expectedFingerprint);
+        store.RemoveBlock(backup.InstanceId, number, expectedFingerprint);
         var restored = store.Read(backup.InstanceId);
         if (restored.InstanceId != backup.InstanceId || restored.EdidHash != current.EdidHash
             || !IsRestoredState(restored.Overrides, backup.OriginalOverrides))

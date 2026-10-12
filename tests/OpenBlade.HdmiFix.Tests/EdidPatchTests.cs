@@ -144,6 +144,57 @@ public sealed class EdidPatchTests
     }
 
     [Fact]
+    public void Plan_ZeroCtaBoundaryWithEmptyPayload_ReturnsUnsupported()
+    {
+        byte[] edid = CreateEdid(forumDataBlock: null);
+        edid[130] = 0;
+        SetChecksum(edid, 1);
+
+        Assert.Equal(PatchDisposition.Unsupported, EdidPatchPlanner.Plan(edid).Disposition);
+    }
+
+    [Fact]
+    public void Plan_ZeroCtaBoundaryWithNonzeroPayload_ReturnsInvalid()
+    {
+        byte[] edid = CreateEdid(CreateForumDataBlock());
+        edid[130] = 0;
+        SetChecksum(edid, 1);
+
+        EdidPatchPlan plan = EdidPatchPlanner.Plan(edid);
+
+        Assert.Equal(PatchDisposition.Invalid, plan.Disposition);
+        Assert.Equal(edid, plan.Patched);
+    }
+
+    [Fact]
+    public void Plan_EmptyZeroBoundaryCtaAmongMultipleExtensions_DoesNotHideValidBlock()
+    {
+        byte[] edid = CreateEdid(CreateForumDataBlock(), includeUnknownExtension: true);
+        Array.Clear(edid, 256, 128);
+        edid[256] = 0x02;
+        edid[257] = 0x03;
+        SetChecksum(edid, 2);
+
+        EdidPatchPlan plan = EdidPatchPlanner.Plan(edid);
+
+        Assert.Equal(PatchDisposition.Ready, plan.Disposition);
+        Assert.Equal([1], plan.ChangedBlocks);
+    }
+
+    [Fact]
+    public void Plan_ZeroBoundaryPhantomBlockInLaterExtension_ReturnsInvalid()
+    {
+        byte[] edid = CreateEdid(forumDataBlock: null, includeUnknownExtension: true);
+        Array.Clear(edid, 256, 128);
+        edid[256] = 0x02;
+        edid[257] = 0x03;
+        CreateForumDataBlock().CopyTo(edid, 260);
+        SetChecksum(edid, 2);
+
+        Assert.Equal(PatchDisposition.Invalid, EdidPatchPlanner.Plan(edid).Disposition);
+    }
+
+    [Fact]
     public void Plan_TruncatedCtaDataBlock_ReturnsInvalid()
     {
         byte[] edid = CreateEdid(CreateForumDataBlock());

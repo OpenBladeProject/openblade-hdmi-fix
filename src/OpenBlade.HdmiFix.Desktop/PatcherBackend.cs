@@ -24,9 +24,16 @@ public sealed class PatcherBackend : IPatcherBackend
         catch (Exception e) when (IsExpected(e)) { notices.Add("The app couldn't check which monitors are connected. Patch and Restore are unavailable."); }
         var blade = MonitorRegistry.IsRazerBlade();
         if (!blade) notices.Add("You can view saved monitors here. Patching is available only on a Razer Blade.");
-        IReadOnlyList<PatchBackup> saved = [];
+        var inventory = BackupInventory.Empty;
         var trustedBackups = true;
-        try { saved = backups.ReadAll(); }
+        try
+        {
+            inventory = backups.ReadInventory();
+            if (inventory.HasPrivateBackups)
+                notices.Add(RecoveryMessages.PrivateBackups);
+            else if (!inventory.AllowsNewBackup)
+                notices.Add("Restore unfinished operations before patching again. Existing backups can still be restored.");
+        }
         catch (Exception e) when (IsExpected(e))
         {
             trustedBackups = false;
@@ -48,10 +55,10 @@ public sealed class PatcherBackend : IPatcherBackend
                 var name = EdidPatchPlanner.MonitorName(state.Edid);
                 if (string.IsNullOrWhiteSpace(name))
                     name = id.StartsWith(@"DISPLAY\SAM7463\", StringComparison.OrdinalIgnoreCase) ? "Samsung G93SC (SAM7463)" : id.Split('\\')[1];
-                var candidates = saved.Where(b => OverrideOperations.CanRestore(state, b)).ToArray();
+                var candidates = inventory.RecoverableFor(state);
                 var backup = candidates.Length == 1 ? candidates[0] : null;
                 var canOperate = blade && trustedBackups && connected == false;
-                var canPatch = canOperate && plan.Disposition == PatchDisposition.Ready
+                var canPatch = canOperate && inventory.AllowsNewBackup && plan.Disposition == PatchDisposition.Ready
                     && state.Overrides.Blocks.Count == 0 && candidates.Length == 0;
                 var canRestore = canOperate && backup is not null;
                 var status = plan.Disposition switch
@@ -72,10 +79,17 @@ public sealed class PatcherBackend : IPatcherBackend
                     details = applied ? "The FRL8 override is installed and verified. Restore returns this connection to its previous state. Check the display after reconnecting."
                         : "A backup from an unfinished operation is available. Choose Restore before patching again.";
                 }
+                else if (inventory.HasChangedEdid(state))
+                {
+                    status = RecoveryMessages.ChangedStatus;
+                    details = RecoveryMessages.ChangedDetails;
+                }
                 else if (state.Overrides.Blocks.Count != 0)
                 {
                     status = "Existing override";
-                    details = "This connection already has an override, but the app has no matching original backup. Use the tool that installed it to restore it first.";
+                    details = inventory.HasPrivateBackups
+                        ? "This connection has an override. A backup may belong to another Windows account. Open the app under the account that created it to check Restore."
+                        : "This connection already has an override, but the app has no matching original backup. Use the tool that installed it to restore it first.";
                 }
                 if (candidates.Length > 1)
                 {
@@ -164,4 +178,11 @@ public sealed class PatcherBackend : IPatcherBackend
     internal static bool IsExpected(Exception e) => e is IOException or UnauthorizedAccessException
         or System.Security.SecurityException or InvalidOperationException or Win32Exception
         or System.Text.Json.JsonException or ArgumentException;
+}
+
+internal static class RecoveryMessages
+{
+    internal const string PrivateBackups = "Backups from another Windows account are present. Use the account that created them before patching. You can still restore your own backups.";
+    internal const string ChangedStatus = "Saved capabilities changed";
+    internal const string ChangedDetails = "The installed override matches a saved patch, but Windows now has different capability data for this connection. Restore is unavailable. Keep the backup folder and copy the details to report this change.";
 }
