@@ -4,7 +4,7 @@ Keep this a small graphical Windows utility for Razer Blade owners. Follow the e
 
 Work in a dedicated main-based Git worktree. Preserve unrelated work. Use purpose-prefixed branches and Conventional Commits. New fixes belong in a pull request. Keep a pull request draft while required exact-head checks or physical validation remain incomplete.
 
-Keep EDID parsing and patch planning pure. The first profile supports only SAM7463 with the reviewed structured HDMI Forum block, DSC enabled, and the expected FRL fields. Never search and replace raw byte patterns, ship another machine's EDID, copy assumptions to another monitor, or weaken admission to make a configuration appear supported.
+Keep EDID parsing and patch planning pure. Patch admission depends on the structured HDMI Forum block, DSC support, and the expected FRL fields, without a monitor-model allowlist. Show the unvalidated-monitor warning for every patchable monitor. Bind the selected saved instance to its own EDID manufacturer and product identity. Never search and replace raw byte patterns, ship another machine's EDID, copy assumptions to another monitor, or weaken admission to make a configuration appear supported.
 
 The GUI runs normally. Read-only inspection may enumerate all saved monitors. Patch and Restore require a disconnected selected monitor, a fresh state check, UAC through the fixed child operation, a durable original backup, and verified readback. Never add a generic elevated runner, automatic UAC approval, device resets, background reapplication, or registry ACL changes to force access.
 
