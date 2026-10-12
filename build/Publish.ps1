@@ -15,6 +15,24 @@ foreach ($name in @('OpenBlade.HdmiFix.exe', 'OpenBlade.HdmiFix.dll', 'OpenBlade
 }
 Copy-Item -LiteralPath (Join-Path $taskRoot 'README.md'), (Join-Path $taskRoot 'LICENSE'), (Join-Path $taskRoot 'VALIDATION.md') -Destination $output
 Copy-Item -LiteralPath (Join-Path $taskRoot 'docs') -Destination $output -Recurse
+$assets = Get-Content -LiteralPath (Join-Path $taskRoot 'src\OpenBlade.HdmiFix.Desktop\obj\project.assets.json') -Raw | ConvertFrom-Json
+$runtimePackages = @($assets.project.frameworks.PSObject.Properties.Value.downloadDependencies | Where-Object {
+    $_.name -in @('Microsoft.NETCore.App.Runtime.win-x64', 'Microsoft.WindowsDesktop.App.Runtime.win-x64')
+})
+if ($runtimePackages.Count -ne 2) { throw 'The runtime package provenance is incomplete.' }
+foreach ($runtimePackage in $runtimePackages) {
+    $runtimeVersion = $runtimePackage.version.Trim('[', ']').Split(',')[0].Trim()
+    $runtimePath = Join-Path $assets.project.restore.packagesPath ($runtimePackage.name.ToLowerInvariant() + '\' + $runtimeVersion)
+    $noticePath = Join-Path $output ('notices\' + $runtimePackage.name)
+    New-Item -ItemType Directory -Path $noticePath | Out-Null
+    $runtimeNotices = @(Get-ChildItem -LiteralPath $runtimePath -File | Where-Object { $_.Name -match '^(LICENSE|THIRD-PARTY-NOTICES)' })
+    if ($runtimeNotices.Count -eq 0) { throw "Missing runtime license: $($runtimePackage.name)" }
+    foreach ($runtimeNotice in $runtimeNotices) { Copy-Item -LiteralPath $runtimeNotice.FullName -Destination $noticePath }
+}
+$sourceCommit = & git -C $taskRoot rev-parse HEAD
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$provenance = @{ version = $version; sourceCommit = [string]$sourceCommit; runtimePackages = $runtimePackages } | ConvertTo-Json -Depth 5
+[IO.File]::WriteAllText((Join-Path $output 'build.json'), $provenance + "`r`n", [Text.UTF8Encoding]::new($false))
 Compress-Archive -LiteralPath $output -DestinationPath $archive
 $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText("$archive.sha256", "$hash  $([IO.Path]::GetFileName($archive))`r`n", [Text.UTF8Encoding]::new($false))
