@@ -21,3 +21,5 @@ If reconnecting still crashes the display stack, unplug the monitor. Recover thr
 Keep the monitor unplugged. Select its saved connection and read the reason on the card. Open **Backups and diagnostics**, choose **Copy details**, and include that report and the monitor's exact model number when reporting the problem.
 
 The report distinguishes missing or incomplete saved capability data, invalid data, a monitor identity mismatch, denied access, and an unrecognized override. Keep any existing overrides and original backups until the cause is known. The report omits raw EDID, serials, device instance IDs, and local paths.
+
+The report includes the stored EDID length, declared block count, header and identity checks, every complete block's checksum, readable HDMI capability fields, and override status. It also includes other saved connections for the same monitor, so you can send one report without reconnecting it or inspecting each connection yourself. Capability fields read from invalid data are observations; they do not enable Patch.

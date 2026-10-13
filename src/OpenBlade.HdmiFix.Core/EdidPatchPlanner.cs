@@ -17,7 +17,7 @@ public sealed record EdidPatchPlan(
     int[] ChangedBlocks,
     string Summary);
 
-public static class EdidPatchPlanner
+public static partial class EdidPatchPlanner
 {
     private const int BlockSize = 128;
     private const byte CtaExtensionTag = 0x02;
@@ -149,6 +149,12 @@ public static class EdidPatchPlanner
     public static string MonitorModelId(byte[] edid)
     {
         if (edid is null || !TryValidateEdid(edid, out _, out _)) return string.Empty;
+        return ObservedModelId(edid);
+    }
+
+    private static string ObservedModelId(byte[] edid)
+    {
+        if (edid.Length < 12) return string.Empty;
         int manufacturer = (edid[8] << 8) | edid[9];
         int first = (manufacturer >> 10) & 31;
         int second = (manufacturer >> 5) & 31;

@@ -5,7 +5,7 @@ public sealed class PreviewBackend : IPatcherBackend
     private static readonly IReadOnlyList<MonitorView> PreviewMonitors =
     [
         PatcherBackend.UnavailableMonitor(@"DISPLAY\SAM74AF\preview", "Previously connected", "Connection PREVIEW",
-            new SavedMonitorReadException(SavedMonitorReadFailure.EdidInvalid)),
+            new SavedMonitorReadException(SavedMonitorReadFailure.EdidInvalid, PreviewInspection())),
         new(
             "DISPLAY\\GSM5B09\\5&2A7B4D91&0&UID4355",
             "LG UltraGear",
@@ -39,6 +39,20 @@ public sealed class PreviewBackend : IPatcherBackend
             BackupPath: null),
     ];
 
+    private static string PreviewInspection()
+    {
+        var bytes = new byte[256];
+        byte[] header = [0, 255, 255, 255, 255, 255, 255, 0];
+        header.CopyTo(bytes, 0);
+        bytes[8] = 0x4C; bytes[9] = 0x2D; bytes[10] = 0xAF; bytes[11] = 0x74;
+        bytes[18] = 1; bytes[19] = 4; bytes[126] = 1;
+        bytes[127] = unchecked((byte)-bytes.Take(127).Sum(x => (int)x));
+        bytes[128] = 2; bytes[129] = 3; bytes[130] = 4;
+        // Synthetic checksum failure; no saved monitor or registry is read.
+        return SavedEntryInspection.DescribeEdid(@"DISPLAY\SAM74AF\preview", bytes, Microsoft.Win32.RegistryValueKind.Binary)
+            + "\nOverride: absent";
+    }
+
     public string BackupDirectory => @"C:\ProgramData\OpenBlade.HdmiFix.Backups";
 
     public Task<MonitorScan> ScanAsync()
@@ -57,6 +71,6 @@ public sealed class PreviewBackend : IPatcherBackend
 
     public string DiagnosticText(MonitorView? monitor)
     {
-        return "Mode: Preview\n" + PatcherBackend.FormatDiagnostics(monitor) + "\nDevice access: Off";
+        return "Mode: Preview\n" + PatcherBackend.FormatRelatedDiagnostics(monitor, PreviewMonitors) + "\nDevice access: Off";
     }
 }

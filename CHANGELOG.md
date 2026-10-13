@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.2.3] - 2026-10-13
+
+### Fixed
+
+- Include all EDID validation checks, HDMI capability observations, override status, and other saved connections for the same monitor in one copied report. Keep the monitor unplugged while collecting it. ([#5](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/5))
+
 ## [0.2.2] - 2026-10-13
 
 ### Fixed
@@ -30,3 +36,5 @@
 [0.2.0]: https://github.com/OpenBladeProject/openblade-hdmi-fix/releases/tag/v0.2.0
 
 [0.2.2]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.1...v0.2.2
+
+[0.2.3]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.2...v0.2.3

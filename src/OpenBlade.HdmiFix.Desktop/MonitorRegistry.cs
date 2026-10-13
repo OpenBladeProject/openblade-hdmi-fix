@@ -40,33 +40,96 @@ internal sealed class MonitorRegistry : IMonitorOverrideStore
         return result;
     }
 
-    public MonitorState Read(string instanceId)
+    public MonitorState Read(string instanceId) => ReadInspected(instanceId).State;
+
+    internal (MonitorState State, string Inspection) ReadInspected(string instanceId)
     {
+        string inspection = "";
         try
         {
             try { MonitorInstance.Validate(instanceId); }
             catch (InvalidDataException) { throw new SavedMonitorReadException(SavedMonitorReadFailure.InvalidInstance); }
             using var key = Registry.LocalMachine.OpenSubKey(ParametersPath(instanceId));
             if (key is null) throw new SavedMonitorReadException(SavedMonitorReadFailure.DeviceParametersMissing);
-            var edid = ValidateSavedEdid(instanceId, key.GetValue("EDID"));
-            using var overrides = key.OpenSubKey("EDID_OVERRIDE");
-            var blocks = new Dictionary<int, byte[]>();
-            if (overrides is not null)
-            {
-                if (overrides.SubKeyCount != 0 || overrides.ValueCount > 256)
-                    throw new SavedMonitorReadException(SavedMonitorReadFailure.OverrideUnrecognized);
-                foreach (var name in overrides.GetValueNames())
-                {
-                    var value = ValidateOverrideValue(name, overrides.GetValueKind(name), overrides.GetValue(name));
-                    blocks.Add(value.Key, value.Value);
-                }
-            }
-            return new(instanceId, edid, new(overrides is not null, blocks));
+            object? value = key.GetValue("EDID");
+            inspection = SavedEntryInspection.DescribeEdid(instanceId, value,
+                value is null ? null : key.GetValueKind("EDID"));
+            // Read override status independently, before EDID admission can fail.
+            var overrideRead = ReadOverrides(key);
+            inspection += "\n" + overrideRead.Report;
+            var edid = ValidateSavedEdid(instanceId, value);
+            if (overrideRead.Failure is { } overrideFailure)
+                throw new SavedMonitorReadException(overrideFailure);
+            return (new(instanceId, edid, overrideRead.State!), inspection);
         }
-        catch (SavedMonitorReadException) { throw; }
+        catch (SavedMonitorReadException e) { throw new SavedMonitorReadException(e.Reason, inspection); }
         catch (Exception e) when (PatcherBackend.IsExpected(e))
         {
-            throw new SavedMonitorReadException(SavedMonitorReadErrors.Classify(e));
+            throw new SavedMonitorReadException(SavedMonitorReadErrors.Classify(e), inspection);
+        }
+    }
+
+    private static (OverrideState? State, string Report, SavedMonitorReadFailure? Failure) ReadOverrides(RegistryKey key)
+    {
+        try
+        {
+            using var overrides = key.OpenSubKey("EDID_OVERRIDE");
+            if (overrides is null) return (new(false, new Dictionary<int, byte[]>()), "Override: absent", null);
+            return InspectOverrideValues(overrides.SubKeyCount, overrides.ValueCount, ReadValues());
+
+            IEnumerable<(string Name, RegistryValueKind Kind, object? Value)> ReadValues()
+            {
+                foreach (var name in overrides.GetValueNames().Order(StringComparer.Ordinal))
+                    yield return (name, overrides.GetValueKind(name), overrides.GetValue(name));
+            }
+        }
+        catch (Exception e) when (PatcherBackend.IsExpected(e))
+        {
+            var reason = SavedMonitorReadErrors.Classify(e);
+            return (null, $"Override inspection failed: {reason}", reason);
+        }
+    }
+
+    internal static (OverrideState? State, string Report, SavedMonitorReadFailure? Failure) InspectOverrideValues(
+        int subKeyCount, int valueCount, IEnumerable<(string Name, RegistryValueKind Kind, object? Value)> values)
+    {
+        var report = new StringBuilder($"Override: present; values {valueCount}; subkeys {subKeyCount}\n");
+        if (subKeyCount != 0 || valueCount > 256)
+            return (null, report.Append("Override inspection: unrecognized layout; values were not inspected.").ToString(), SavedMonitorReadFailure.OverrideUnrecognized);
+        var blocks = new Dictionary<int, byte[]>();
+        SavedMonitorReadFailure? failure = null;
+        try
+        {
+            int inspected = 0;
+            foreach (var (name, kind, value) in values)
+            {
+                if (++inspected > 256)
+                    return (null, report.Append("Override inspection: value count changed or exceeds the limit.").ToString(), SavedMonitorReadFailure.OverrideUnrecognized);
+                bool canonical = int.TryParse(name, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out int number)
+                    && number is >= 0 and <= 255 && name == number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                report.Append("Override value " + (canonical ? number.ToString(System.Globalization.CultureInfo.InvariantCulture) : "[nonstandard name]") + $": type {kind}");
+                if (value is byte[] bytes)
+                {
+                    report.Append($"; bytes {bytes.Length}");
+                    if (bytes.Length == 128) report.Append($"; checksum remainder {bytes.Sum(x => (int)x) & 255}");
+                }
+                report.AppendLine();
+                try
+                {
+                    var block = ValidateOverrideValue(name, kind, value);
+                    blocks.Add(block.Key, block.Value);
+                }
+                catch (SavedMonitorReadException e) { failure = e.Reason; }
+            }
+            if (inspected != valueCount)
+                return (null, report.Append("Override inspection: value count changed during the read.").ToString(), SavedMonitorReadFailure.ReadFailed);
+            return (failure is null ? new(true, blocks) : null, report.ToString().TrimEnd(), failure);
+        }
+        catch (Exception e) when (PatcherBackend.IsExpected(e))
+        {
+            var reason = SavedMonitorReadErrors.Classify(e);
+            return (null, report.Append($"Override inspection failed: {reason}").ToString(), reason);
         }
     }
 

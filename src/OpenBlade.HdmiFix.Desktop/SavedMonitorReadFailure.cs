@@ -16,10 +16,11 @@ public enum SavedMonitorReadFailure
     ReadFailed,
 }
 
-internal sealed class SavedMonitorReadException(SavedMonitorReadFailure reason)
+internal sealed class SavedMonitorReadException(SavedMonitorReadFailure reason, string inspection = "")
     : IOException(SavedMonitorReadErrors.Describe(reason))
 {
     internal SavedMonitorReadFailure Reason { get; } = reason;
+    internal string Inspection { get; } = inspection;
 }
 
 internal static class SavedMonitorReadErrors

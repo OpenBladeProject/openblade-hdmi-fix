@@ -2,7 +2,7 @@ namespace OpenBlade.HdmiFix.Desktop;
 
 public sealed record MonitorView(
     string InstanceId, string Name, string ConnectionLabel, string InstanceLabel,
-    string Status, string Details, bool CanPatch, bool CanRestore, string? BackupPath, string ValidationWarning = "", SavedMonitorReadFailure? ReadFailure = null)
+    string Status, string Details, bool CanPatch, bool CanRestore, string? BackupPath, string ValidationWarning = "", SavedMonitorReadFailure? ReadFailure = null, string InspectionDetails = "")
 {
     public string DisplayLabel => $"{Name} ({ConnectionLabel}, {InstanceLabel})";
 }

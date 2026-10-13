@@ -222,6 +222,7 @@
             <TextBlock Text="Sanitized diagnostic details" Style="{StaticResource SectionLabelStyle}" />
             <TextBox x:Name="DiagnosticsText"
                      MinHeight="96"
+                     MaxHeight="320"
                      Padding="10"
                      IsReadOnly="True"
                      TextWrapping="Wrap"
