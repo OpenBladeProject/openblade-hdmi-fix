@@ -27,6 +27,25 @@ public sealed class OverrideOperationsTests
     }
 
     [Fact]
+    public void ApplyAndRestorePreserveFullExtensionOverrideEdidAndBackup()
+    {
+        var original = EdidExtensionCountTests.Fixture(product: 0x7463);
+        var store = new MemoryMonitor { State = new(Instance, original, OverrideState.Empty) };
+        var backups = new MemoryBackups();
+        var backup = OverrideOperations.Apply(store, backups, Instance, store.State.Fingerprint);
+        backup.Validate();
+        Assert.Equal(original, backup.OriginalEdid);
+        Assert.Equal(512, backup.OriginalEdid.Length);
+        Assert.Equal(original, store.State.Edid);
+        Assert.Equal([1], store.State.Overrides.Blocks.Keys.ToArray());
+        Assert.True(OverrideOperations.CanRestore(store.State, backup));
+        OverrideOperations.Restore(store, backups, backup, store.State.Fingerprint);
+        Assert.Equal(original, store.State.Edid);
+        Assert.True(OverrideOperations.IsRestoredState(store.State.Overrides, OverrideState.Empty));
+        Assert.Equal("Restored", backups.Items[backup.Id].Stage);
+    }
+
+    [Fact]
     public void Restore_PreservesAnOriginallyExistingEmptyKey()
     {
         var store = new MemoryMonitor { State = new(Instance, Edid(), new(true, [])) };

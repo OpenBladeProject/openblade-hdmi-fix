@@ -10,6 +10,7 @@ public sealed class PatcherBackend : IPatcherBackend
     private readonly BackupFiles backups = new();
     private readonly Dictionary<string, MonitorState> displayed = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PatchBackup> restorations = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<MonitorView> lastScan = [];
     public string BackupDirectory => backups.DirectoryPath;
 
     public Task<MonitorScan> ScanAsync() => Task.Run(Scan);
@@ -52,7 +53,8 @@ public sealed class PatcherBackend : IPatcherBackend
                 System.Text.Encoding.UTF8.GetBytes(id)))[..8];
             try
             {
-                var state = registry.Read(id);
+                var inspected = registry.ReadInspected(id);
+                var state = inspected.State;
                 displayed[id] = state;
                 var plan = EdidPatchPlanner.Plan(state.Edid);
                 var name = EdidPatchPlanner.MonitorName(state.Edid);
@@ -107,17 +109,18 @@ public sealed class PatcherBackend : IPatcherBackend
                 views.Add(new(id, name, connection, instanceLabel, status, details, canPatch, canRestore,
                     backup is null ? null : Path.Combine(BackupDirectory, backup.Id + ".json"),
                     plan.Disposition is PatchDisposition.Ready or PatchDisposition.AlreadyCapped || backup is not null
-                        ? MonitorWarnings.Unvalidated : string.Empty));
+                        ? MonitorWarnings.Unvalidated : string.Empty,
+                    InspectionDetails: inspected.Inspection));
             }
             catch (Exception e) when (IsExpected(e))
             {
-                views.Add(new(id, id.Split('\\')[1], connection, instanceLabel, "Saved entry unavailable",
-                    "Windows has no complete, readable capability data matching this entry, or its override isn't recognized. Keep the affected monitor unplugged. Patching is unavailable.", false, false, null));
+                views.Add(UnavailableMonitor(id, connection, instanceLabel, e));
             }
         }
         if (views.Count == 0) notices.Add("Windows has no saved monitors. Keep the crashing monitor unplugged. The app needs its previously saved capability data to patch it.");
-        return new(views.OrderByDescending(v => v.CanPatch || v.CanRestore)
-            .ThenBy(v => v.DisplayLabel, StringComparer.OrdinalIgnoreCase).ToArray(), string.Join(" ", notices));
+        lastScan = views.OrderByDescending(v => v.CanPatch || v.CanRestore)
+            .ThenBy(v => v.DisplayLabel, StringComparer.OrdinalIgnoreCase).ToArray();
+        return new(lastScan, string.Join(" ", notices));
     }
 
     public async Task<OperationOutcome> ApplyAsync(MonitorView monitor, bool restore)
@@ -172,14 +175,40 @@ public sealed class PatcherBackend : IPatcherBackend
         }
     }
 
-    public string DiagnosticText(MonitorView? monitor)
+    internal static MonitorView UnavailableMonitor(string id, string connection, string instanceLabel, Exception error)
+    {
+        var reason = SavedMonitorReadErrors.Classify(error);
+        return new(id, id.Split('\\')[1], connection, instanceLabel, "Saved entry unavailable",
+            SavedMonitorReadErrors.Describe(reason)
+                + " Keep the monitor unplugged. Open Backups and diagnostics and choose Copy details to report this entry.",
+            false, false, null, ReadFailure: reason,
+            InspectionDetails: error is SavedMonitorReadException known ? known.Inspection : "");
+    }
+
+    public string DiagnosticText(MonitorView? monitor) => FormatRelatedDiagnostics(monitor, lastScan);
+
+    internal static string FormatRelatedDiagnostics(MonitorView? selected, IReadOnlyList<MonitorView> monitors)
+    {
+        string report = FormatDiagnostics(selected);
+        if (selected is null) return report;
+        string model = selected.InstanceId.Split('\\')[1];
+        foreach (var other in monitors.Where(m => m.InstanceId != selected.InstanceId
+            && m.InstanceId.Split('\\')[1].Equals(model, StringComparison.OrdinalIgnoreCase)))
+            report += "\n\nOther saved connection for this monitor:\n" + FormatDiagnostics(other);
+        return report;
+    }
+
+    internal static string FormatDiagnostics(MonitorView? monitor)
     {
         var version = typeof(PatcherBackend).Assembly.GetName().Version;
         if (monitor is null) return $"OpenBlade HDMI Fix {version}\nNo monitor selected.";
         return $"OpenBlade HDMI Fix {version}\nMonitor ID: {monitor.InstanceId.Split('\\')[1]}\n"
-            + $"Connection: {monitor.ConnectionLabel}\nState: {monitor.Status}\n"
+            + $"Connection: {monitor.ConnectionLabel}\nSaved connection: {monitor.InstanceLabel}\nState: {monitor.Status}\n"
             + $"Patch available: {monitor.CanPatch}\nRestore available: {monitor.CanRestore}\n"
+            + (monitor.ReadFailure is { } reason
+                ? $"Read failure: {reason}\nReason: {SavedMonitorReadErrors.Describe(reason)}\n" : "")
             + (string.IsNullOrEmpty(monitor.ValidationWarning) ? "" : $"Validation: {monitor.ValidationWarning}\n")
+            + (string.IsNullOrEmpty(monitor.InspectionDetails) ? "" : monitor.InspectionDetails + "\n")
             + "Raw EDID, serials, device instance IDs, and local paths are omitted.";
     }
 

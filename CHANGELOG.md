@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## [0.2.5] - 2026-10-13
+
+### Fixed
+
+- Check CTA data inside DisplayID blocks before patching. Block configurations with additional HDMI Forum capabilities or malformed data, and preserve unrelated DisplayID data. ([#5](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/5))
+
+## [0.2.4] - 2026-10-13
+
+### Fixed
+
+- Recognize valid HDMI Forum extension-count overrides, so monitors with additional saved EDID blocks can be patched without removing those blocks. Verify the full declared data and preserve its identity and checksums. ([#5](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/5))
+
+## [0.2.3] - 2026-10-13
+
+### Fixed
+
+- Include all EDID validation checks, HDMI capability observations, override status, and other saved connections for the same monitor in one copied report. Keep the monitor unplugged while collecting it. ([#5](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/5))
+
+## [0.2.2] - 2026-10-13
+
+### Fixed
+
+- Show why a saved monitor entry is unavailable and include that reason in copied diagnostics, so it can be checked while the monitor stays unplugged. Keep private device data out of the report. ([#5](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/5))
+
 ## [0.2.1] - 2026-10-13
 
 ### Fixed
@@ -22,3 +46,11 @@
 
 [0.2.1]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/OpenBladeProject/openblade-hdmi-fix/releases/tag/v0.2.0
+
+[0.2.2]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.1...v0.2.2
+
+[0.2.3]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.2...v0.2.3
+
+[0.2.4]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.3...v0.2.4
+
+[0.2.5]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.4...v0.2.5

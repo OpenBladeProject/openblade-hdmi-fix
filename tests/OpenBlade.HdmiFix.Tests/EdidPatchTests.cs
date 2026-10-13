@@ -368,11 +368,15 @@ public sealed class EdidPatchTests
             int unknownStart = 256;
             edid[unknownStart] = 0x70;
             edid[unknownStart + 1] = 0x20;
+            edid[unknownStart + 2] = 18;
+            edid[unknownStart + 5] = 0x7E;
+            edid[unknownStart + 7] = 15;
             edid[unknownStart + 14] = 0xD8;
             edid[unknownStart + 15] = 0x5D;
             edid[unknownStart + 16] = 0xC4;
             edid[unknownStart + 17] = 0x5B;
             edid[unknownStart + 22] = 0x5A;
+            edid[unknownStart + 23] = unchecked((byte)-edid.Skip(unknownStart + 1).Take(22).Sum(x => (int)x));
             SetChecksum(edid, 2);
         }
 

@@ -40,32 +40,125 @@ internal sealed class MonitorRegistry : IMonitorOverrideStore
         return result;
     }
 
-    public MonitorState Read(string instanceId)
+    public MonitorState Read(string instanceId) => ReadInspected(instanceId).State;
+
+    internal (MonitorState State, string Inspection) ReadInspected(string instanceId)
     {
-        MonitorInstance.Validate(instanceId);
-        using var key = Registry.LocalMachine.OpenSubKey(ParametersPath(instanceId));
-        if (key is null) throw new InvalidDataException("Windows has no cached device parameters for this entry.");
-        if (key.GetValue("EDID") is not byte[] edid || edid.Length > 32768)
-            throw new InvalidDataException("Windows has no complete cached EDID for this entry.");
-        MonitorInstance.ValidateEdid(instanceId, edid);
-        using var overrides = key.OpenSubKey("EDID_OVERRIDE");
-        var blocks = new Dictionary<int, byte[]>();
-        if (overrides is not null)
+        string inspection = "";
+        try
         {
-            if (overrides.SubKeyCount != 0 || overrides.ValueCount > 256)
-                throw new InvalidDataException("An unfamiliar override layout is present. No changes are allowed.");
-            foreach (var name in overrides.GetValueNames())
+            try { MonitorInstance.Validate(instanceId); }
+            catch (InvalidDataException) { throw new SavedMonitorReadException(SavedMonitorReadFailure.InvalidInstance); }
+            using var key = Registry.LocalMachine.OpenSubKey(ParametersPath(instanceId));
+            if (key is null) throw new SavedMonitorReadException(SavedMonitorReadFailure.DeviceParametersMissing);
+            object? value = key.GetValue("EDID");
+            inspection = SavedEntryInspection.DescribeEdid(instanceId, value,
+                value is null ? null : key.GetValueKind("EDID"));
+            // Read override status independently, before EDID admission can fail.
+            var overrideRead = ReadOverrides(key);
+            inspection += "\n" + overrideRead.Report;
+            var edid = ValidateSavedEdid(instanceId, value);
+            if (overrideRead.Failure is { } overrideFailure)
+                throw new SavedMonitorReadException(overrideFailure);
+            return (new(instanceId, edid, overrideRead.State!), inspection);
+        }
+        catch (SavedMonitorReadException e) { throw new SavedMonitorReadException(e.Reason, inspection); }
+        catch (Exception e) when (PatcherBackend.IsExpected(e))
+        {
+            throw new SavedMonitorReadException(SavedMonitorReadErrors.Classify(e), inspection);
+        }
+    }
+
+    private static (OverrideState? State, string Report, SavedMonitorReadFailure? Failure) ReadOverrides(RegistryKey key)
+    {
+        try
+        {
+            using var overrides = key.OpenSubKey("EDID_OVERRIDE");
+            if (overrides is null) return (new(false, new Dictionary<int, byte[]>()), "Override: absent", null);
+            return InspectOverrideValues(overrides.SubKeyCount, overrides.ValueCount, ReadValues());
+
+            IEnumerable<(string Name, RegistryValueKind Kind, object? Value)> ReadValues()
             {
-                if (!int.TryParse(name, System.Globalization.NumberStyles.None,
-                        System.Globalization.CultureInfo.InvariantCulture, out var number)
-                    || number is < 0 or > 255 || name != number.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                    || overrides.GetValueKind(name) != RegistryValueKind.Binary
-                    || overrides.GetValue(name) is not byte[] data || data.Length != 128)
-                    throw new InvalidDataException("An unfamiliar EDID override is present. Restore it with its owning tool.");
-                blocks.Add(number, data);
+                foreach (var name in overrides.GetValueNames().Order(StringComparer.Ordinal))
+                    yield return (name, overrides.GetValueKind(name), overrides.GetValue(name));
             }
         }
-        return new(instanceId, edid, new(overrides is not null, blocks));
+        catch (Exception e) when (PatcherBackend.IsExpected(e))
+        {
+            var reason = SavedMonitorReadErrors.Classify(e);
+            return (null, $"Override inspection failed: {reason}", reason);
+        }
+    }
+
+    internal static (OverrideState? State, string Report, SavedMonitorReadFailure? Failure) InspectOverrideValues(
+        int subKeyCount, int valueCount, IEnumerable<(string Name, RegistryValueKind Kind, object? Value)> values)
+    {
+        var report = new StringBuilder($"Override: present; values {valueCount}; subkeys {subKeyCount}\n");
+        if (subKeyCount != 0 || valueCount > 256)
+            return (null, report.Append("Override inspection: unrecognized layout; values were not inspected.").ToString(), SavedMonitorReadFailure.OverrideUnrecognized);
+        var blocks = new Dictionary<int, byte[]>();
+        SavedMonitorReadFailure? failure = null;
+        try
+        {
+            int inspected = 0;
+            foreach (var (name, kind, value) in values)
+            {
+                if (++inspected > 256)
+                    return (null, report.Append("Override inspection: value count changed or exceeds the limit.").ToString(), SavedMonitorReadFailure.OverrideUnrecognized);
+                bool canonical = int.TryParse(name, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out int number)
+                    && number is >= 0 and <= 255 && name == number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                report.Append("Override value " + (canonical ? number.ToString(System.Globalization.CultureInfo.InvariantCulture) : "[nonstandard name]") + $": type {kind}");
+                if (value is byte[] bytes)
+                {
+                    report.Append($"; bytes {bytes.Length}");
+                    if (bytes.Length == 128) report.Append($"; checksum remainder {bytes.Sum(x => (int)x) & 255}");
+                }
+                report.AppendLine();
+                try
+                {
+                    var block = ValidateOverrideValue(name, kind, value);
+                    blocks.Add(block.Key, block.Value);
+                }
+                catch (SavedMonitorReadException e) { failure = e.Reason; }
+            }
+            if (inspected != valueCount)
+                return (null, report.Append("Override inspection: value count changed during the read.").ToString(), SavedMonitorReadFailure.ReadFailed);
+            return (failure is null ? new(true, blocks) : null, report.ToString().TrimEnd(), failure);
+        }
+        catch (Exception e) when (PatcherBackend.IsExpected(e))
+        {
+            var reason = SavedMonitorReadErrors.Classify(e);
+            return (null, report.Append($"Override inspection failed: {reason}").ToString(), reason);
+        }
+    }
+
+    internal static byte[] ValidateSavedEdid(string instanceId, object? value)
+    {
+        if (value is null) throw new SavedMonitorReadException(SavedMonitorReadFailure.EdidMissing);
+        if (value is not byte[] edid || edid.Length > 32768)
+            throw new SavedMonitorReadException(SavedMonitorReadFailure.EdidInvalid);
+        if (EdidPatchPlanner.MonitorModelId(edid).Length == 0)
+        {
+            var count = EdidPatchPlanner.InspectExtensionCount(edid);
+            var incomplete = edid.Length < 128 || edid.Length % 128 != 0
+                || (count.IsValid && count.ExpectedBytes > edid.Length);
+            throw new SavedMonitorReadException(incomplete
+                ? SavedMonitorReadFailure.EdidIncomplete : SavedMonitorReadFailure.EdidInvalid);
+        }
+        try { MonitorInstance.ValidateEdid(instanceId, edid); }
+        catch (InvalidDataException) { throw new SavedMonitorReadException(SavedMonitorReadFailure.IdentityMismatch); }
+        return edid;
+    }
+
+    internal static KeyValuePair<int, byte[]> ValidateOverrideValue(string name, RegistryValueKind kind, object? value)
+    {
+        if (!int.TryParse(name, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var number)
+            || number is < 0 or > 255 || name != number.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            || kind != RegistryValueKind.Binary || value is not byte[] data || data.Length != 128)
+            throw new SavedMonitorReadException(SavedMonitorReadFailure.OverrideUnrecognized);
+        return new(number, data);
     }
 
     public void WriteBlock(string instanceId, int block, byte[] value, string expectedFingerprint)
