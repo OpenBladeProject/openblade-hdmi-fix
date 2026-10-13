@@ -140,6 +140,22 @@ try {
     Assert-Test (-not (Test-Path -LiteralPath $dirtyResult.Marker)) 'Dirty source invoked dotnet before failing.'
     Assert-Test (-not (Test-Path -LiteralPath (Join-Path $dirtyRoot 'artifacts\publish'))) 'Dirty source created publish output before failing.'
 
+    foreach ($suffix in @('.zip', '.zip.sha256')) {
+        $collisionRoot = New-PublishFixture
+        $existingFile = Join-Path $collisionRoot ("artifacts\OpenBlade.HdmiFix-1.2.3-win-x64" + $suffix)
+        Write-TestFile $existingFile "preserved output`r`n"
+        $previousHash = (Get-FileHash -LiteralPath $existingFile -Algorithm SHA256).Hash
+        $collisionResult = Invoke-FixturePublish $collisionRoot
+        Assert-Test ($collisionResult.ExitCode -ne 0) "Existing $suffix unexpectedly published."
+        Assert-Test ($collisionResult.Output -match 'release archive or checksum already exists') 'Collision did not report preserve-or-move guidance.'
+        Assert-Test (-not (Test-Path -LiteralPath $collisionResult.Marker)) 'Output collision invoked dotnet before failing.'
+        Assert-Test (-not (Test-Path -LiteralPath (Join-Path $collisionRoot 'artifacts\publish'))) 'Output collision left a publish folder.'
+        Assert-Test ((Get-FileHash -LiteralPath $existingFile -Algorithm SHA256).Hash -eq $previousHash) 'Output collision changed the existing file.'
+        $retryResult = Invoke-FixturePublish $collisionRoot
+        Assert-Test ($retryResult.Output -match 'release archive or checksum already exists') 'Retry failed on leftover publish output instead of the original collision.'
+        Assert-Test (-not (Test-Path -LiteralPath $retryResult.Marker)) 'Retry invoked dotnet despite the collision.'
+    }
+
     $changedRoot = New-PublishFixture
     $changedResult = Invoke-FixturePublish $changedRoot 'dirty'
     Assert-Test ($changedResult.ExitCode -ne 0) 'Source changed during the build unexpectedly published.'

@@ -7,6 +7,7 @@
     <AssemblyName>OpenBlade.HdmiFix</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenBlade.HdmiFix.Desktop.Tests" />
     <ProjectReference Include="../OpenBlade.HdmiFix.Core/OpenBlade.HdmiFix.Core.csproj" />
   </ItemGroup>
 </Project>

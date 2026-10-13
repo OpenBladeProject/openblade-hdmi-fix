@@ -178,7 +178,7 @@ public sealed class PatcherBackend : IPatcherBackend
             + "Raw EDID, serials, device instance IDs, and local paths are omitted.";
     }
 
-    internal static bool IsExpected(Exception e) => e is IOException or UnauthorizedAccessException
+    internal static bool IsExpected(Exception e) => e is IOException or InvalidDataException or UnauthorizedAccessException
         or System.Security.SecurityException or InvalidOperationException or Win32Exception
         or System.Text.Json.JsonException or ArgumentException;
 }

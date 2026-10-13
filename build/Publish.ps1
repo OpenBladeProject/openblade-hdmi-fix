@@ -32,6 +32,11 @@ $version = [string]$properties.Project.PropertyGroup.Version
 $output = Join-Path $taskRoot 'artifacts\publish'
 $archive = Join-Path $taskRoot "artifacts\OpenBlade.HdmiFix-$version-win-x64.zip"
 if (Test-Path -LiteralPath $output) { throw 'The publish folder already exists. Preserve or move it before preparing a new payload.' }
+foreach ($existingFile in @($archive, "$archive.sha256")) {
+    if (Test-Path -LiteralPath $existingFile) {
+        throw 'The release archive or checksum already exists. Preserve or move it before preparing a new payload.'
+    }
+}
 & dotnet publish (Join-Path $taskRoot 'src\OpenBlade.HdmiFix.Desktop\OpenBlade.HdmiFix.Desktop.csproj') -c Release -r win-x64 --self-contained true -p:NuGetAudit=false -o $output
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 foreach ($name in @('OpenBlade.HdmiFix.exe', 'OpenBlade.HdmiFix.dll', 'OpenBlade.HdmiFix.Core.dll', 'OpenBlade.HdmiFix.runtimeconfig.json', 'hostfxr.dll', 'wpfgfx_cor3.dll')) {
