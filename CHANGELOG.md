@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Show why a saved monitor entry is unavailable and include that reason in copied diagnostics, so it can be checked while the monitor stays unplugged. Keep private device data out of the report. ([#5](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/5))
+
 ## [0.2.1] - 2026-10-13
 
 ### Fixed
