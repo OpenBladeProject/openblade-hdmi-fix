@@ -15,3 +15,9 @@ If the app shows **Saved capabilities changed**, its installed override matches 
 Do not upload backup JSON, temporary backup files, raw EDID, or registry exports. They can contain monitor serial numbers and machine-specific identifiers. Copied diagnostics omit those fields.
 
 If reconnecting still crashes the display stack, unplug the monitor. Recover through the laptop's internal display and reopen the app to inspect the saved connection. The app does not reconnect monitors, restart display devices, reset the GPU, or change display modes for you.
+
+## Saved entry unavailable
+
+Keep the monitor unplugged. Select its saved connection and read the reason on the card. Open **Backups and diagnostics**, choose **Copy details**, and include that report and the monitor's exact model number when reporting the problem.
+
+The report distinguishes missing or incomplete saved capability data, invalid data, a monitor identity mismatch, denied access, and an unrecognized override. Keep any existing overrides and original backups until the cause is known. The report omits raw EDID, serials, device instance IDs, and local paths.

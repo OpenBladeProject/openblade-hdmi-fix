@@ -111,8 +111,7 @@ public sealed class PatcherBackend : IPatcherBackend
             }
             catch (Exception e) when (IsExpected(e))
             {
-                views.Add(new(id, id.Split('\\')[1], connection, instanceLabel, "Saved entry unavailable",
-                    "Windows has no complete, readable capability data matching this entry, or its override isn't recognized. Keep the affected monitor unplugged. Patching is unavailable.", false, false, null));
+                views.Add(UnavailableMonitor(id, connection, instanceLabel, e));
             }
         }
         if (views.Count == 0) notices.Add("Windows has no saved monitors. Keep the crashing monitor unplugged. The app needs its previously saved capability data to patch it.");
@@ -172,13 +171,26 @@ public sealed class PatcherBackend : IPatcherBackend
         }
     }
 
-    public string DiagnosticText(MonitorView? monitor)
+    internal static MonitorView UnavailableMonitor(string id, string connection, string instanceLabel, Exception error)
+    {
+        var reason = SavedMonitorReadErrors.Classify(error);
+        return new(id, id.Split('\\')[1], connection, instanceLabel, "Saved entry unavailable",
+            SavedMonitorReadErrors.Describe(reason)
+                + " Keep the monitor unplugged. Open Backups and diagnostics and choose Copy details to report this entry.",
+            false, false, null, ReadFailure: reason);
+    }
+
+    public string DiagnosticText(MonitorView? monitor) => FormatDiagnostics(monitor);
+
+    internal static string FormatDiagnostics(MonitorView? monitor)
     {
         var version = typeof(PatcherBackend).Assembly.GetName().Version;
         if (monitor is null) return $"OpenBlade HDMI Fix {version}\nNo monitor selected.";
         return $"OpenBlade HDMI Fix {version}\nMonitor ID: {monitor.InstanceId.Split('\\')[1]}\n"
             + $"Connection: {monitor.ConnectionLabel}\nState: {monitor.Status}\n"
             + $"Patch available: {monitor.CanPatch}\nRestore available: {monitor.CanRestore}\n"
+            + (monitor.ReadFailure is { } reason
+                ? $"Read failure: {reason}\nReason: {SavedMonitorReadErrors.Describe(reason)}\n" : "")
             + (string.IsNullOrEmpty(monitor.ValidationWarning) ? "" : $"Validation: {monitor.ValidationWarning}\n")
             + "Raw EDID, serials, device instance IDs, and local paths are omitted.";
     }

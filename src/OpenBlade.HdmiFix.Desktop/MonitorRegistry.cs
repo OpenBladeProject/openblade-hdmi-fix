@@ -42,30 +42,59 @@ internal sealed class MonitorRegistry : IMonitorOverrideStore
 
     public MonitorState Read(string instanceId)
     {
-        MonitorInstance.Validate(instanceId);
-        using var key = Registry.LocalMachine.OpenSubKey(ParametersPath(instanceId));
-        if (key is null) throw new InvalidDataException("Windows has no cached device parameters for this entry.");
-        if (key.GetValue("EDID") is not byte[] edid || edid.Length > 32768)
-            throw new InvalidDataException("Windows has no complete cached EDID for this entry.");
-        MonitorInstance.ValidateEdid(instanceId, edid);
-        using var overrides = key.OpenSubKey("EDID_OVERRIDE");
-        var blocks = new Dictionary<int, byte[]>();
-        if (overrides is not null)
+        try
         {
-            if (overrides.SubKeyCount != 0 || overrides.ValueCount > 256)
-                throw new InvalidDataException("An unfamiliar override layout is present. No changes are allowed.");
-            foreach (var name in overrides.GetValueNames())
+            try { MonitorInstance.Validate(instanceId); }
+            catch (InvalidDataException) { throw new SavedMonitorReadException(SavedMonitorReadFailure.InvalidInstance); }
+            using var key = Registry.LocalMachine.OpenSubKey(ParametersPath(instanceId));
+            if (key is null) throw new SavedMonitorReadException(SavedMonitorReadFailure.DeviceParametersMissing);
+            var edid = ValidateSavedEdid(instanceId, key.GetValue("EDID"));
+            using var overrides = key.OpenSubKey("EDID_OVERRIDE");
+            var blocks = new Dictionary<int, byte[]>();
+            if (overrides is not null)
             {
-                if (!int.TryParse(name, System.Globalization.NumberStyles.None,
-                        System.Globalization.CultureInfo.InvariantCulture, out var number)
-                    || number is < 0 or > 255 || name != number.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                    || overrides.GetValueKind(name) != RegistryValueKind.Binary
-                    || overrides.GetValue(name) is not byte[] data || data.Length != 128)
-                    throw new InvalidDataException("An unfamiliar EDID override is present. Restore it with its owning tool.");
-                blocks.Add(number, data);
+                if (overrides.SubKeyCount != 0 || overrides.ValueCount > 256)
+                    throw new SavedMonitorReadException(SavedMonitorReadFailure.OverrideUnrecognized);
+                foreach (var name in overrides.GetValueNames())
+                {
+                    var value = ValidateOverrideValue(name, overrides.GetValueKind(name), overrides.GetValue(name));
+                    blocks.Add(value.Key, value.Value);
+                }
             }
+            return new(instanceId, edid, new(overrides is not null, blocks));
         }
-        return new(instanceId, edid, new(overrides is not null, blocks));
+        catch (SavedMonitorReadException) { throw; }
+        catch (Exception e) when (PatcherBackend.IsExpected(e))
+        {
+            throw new SavedMonitorReadException(SavedMonitorReadErrors.Classify(e));
+        }
+    }
+
+    internal static byte[] ValidateSavedEdid(string instanceId, object? value)
+    {
+        if (value is null) throw new SavedMonitorReadException(SavedMonitorReadFailure.EdidMissing);
+        if (value is not byte[] edid || edid.Length > 32768)
+            throw new SavedMonitorReadException(SavedMonitorReadFailure.EdidInvalid);
+        if (EdidPatchPlanner.MonitorModelId(edid).Length == 0)
+        {
+            var incomplete = edid.Length < 128 || edid.Length % 128 != 0
+                || (edid[126] + 1) * 128 > edid.Length;
+            throw new SavedMonitorReadException(incomplete
+                ? SavedMonitorReadFailure.EdidIncomplete : SavedMonitorReadFailure.EdidInvalid);
+        }
+        try { MonitorInstance.ValidateEdid(instanceId, edid); }
+        catch (InvalidDataException) { throw new SavedMonitorReadException(SavedMonitorReadFailure.IdentityMismatch); }
+        return edid;
+    }
+
+    internal static KeyValuePair<int, byte[]> ValidateOverrideValue(string name, RegistryValueKind kind, object? value)
+    {
+        if (!int.TryParse(name, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var number)
+            || number is < 0 or > 255 || name != number.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            || kind != RegistryValueKind.Binary || value is not byte[] data || data.Length != 128)
+            throw new SavedMonitorReadException(SavedMonitorReadFailure.OverrideUnrecognized);
+        return new(number, data);
     }
 
     public void WriteBlock(string instanceId, int block, byte[] value, string expectedFingerprint)

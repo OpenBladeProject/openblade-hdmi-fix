@@ -171,7 +171,7 @@
             <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="Saved connection" />
             <TextBlock x:Name="InstanceLabelText" Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" Text="None" />
           </Grid>
-          <TextBlock x:Name="MonitorDetailsText"
+          <TextBlock x:Name="MonitorDetailsText" automation:AutomationProperties.LiveSetting="Polite"
                      Margin="0,16,0,0"
                      Style="{StaticResource MutedTextStyle}"
                      Text="The scan is read-only." />
