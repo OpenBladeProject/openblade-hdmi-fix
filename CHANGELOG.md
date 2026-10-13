@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.2.4] - 2026-10-13
+
+### Fixed
+
+- Recognize valid HDMI Forum extension-count overrides, so monitors with additional saved EDID blocks can be patched without removing those blocks. Verify the full declared data and preserve its identity and checksums. ([#5](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/5))
+
 ## [0.2.3] - 2026-10-13
 
 ### Fixed
@@ -38,3 +44,5 @@
 [0.2.2]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.1...v0.2.2
 
 [0.2.3]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.2...v0.2.3
+
+[0.2.4]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.3...v0.2.4

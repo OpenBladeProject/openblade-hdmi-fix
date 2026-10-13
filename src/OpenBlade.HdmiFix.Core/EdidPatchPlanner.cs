@@ -221,11 +221,19 @@ public static partial class EdidPatchPlanner
             return false;
         }
 
-        extensionCount = edid[126];
-        int expectedLength = checked((extensionCount + 1) * BlockSize);
+        var count = InspectExtensionCount(edid);
+        if (!count.IsValid)
+        {
+            failure = count.Failure;
+            return false;
+        }
+        extensionCount = count.Effective;
+        int expectedLength = count.ExpectedBytes;
         if (edid.Length != expectedLength)
         {
-            failure = "The EDID length does not match its declared extension count.";
+            failure = count.HasOverride
+                ? "The EDID length does not match its HDMI Forum extension-count override."
+                : "The EDID length does not match its declared extension count.";
             return false;
         }
 

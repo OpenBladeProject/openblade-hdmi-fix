@@ -182,6 +182,24 @@ public sealed class EdidInspectionTests
         Assert.False(first.CanRestore);
     }
 
+    [Fact]
+    public void SavedSam74afWithExtensionOverridePassesReadValidationAndReportsEffectiveCount()
+    {
+        var edid = Edid(4);
+        edid[126] = 1;
+        edid[130] = 7;
+        new byte[] { 0xE2, 0x78, 3 }.CopyTo(edid, 132);
+        edid[256] = 0x70; edid[384] = 0x70;
+        for (int block = 0; block < 4; block++) FixChecksum(edid, block);
+        Assert.Same(edid, MonitorRegistry.ValidateSavedEdid(Instance, edid));
+        string report = SavedEntryInspection.DescribeEdid(Instance, edid, RegistryValueKind.Binary);
+        Assert.Contains("Saved connection identity: matches", report);
+        Assert.Contains("Effective extension blocks: 3; expected bytes: 512", report);
+        Assert.Contains("Effective block count: matches", report);
+        var incomplete = Assert.Throws<SavedMonitorReadException>(() => MonitorRegistry.ValidateSavedEdid(Instance, edid[..384]));
+        Assert.Equal(SavedMonitorReadFailure.EdidIncomplete, incomplete.Reason);
+    }
+
     private static IEnumerable<(string, RegistryValueKind, object?)> ThrowingValues()
     {
         yield return ("1", RegistryValueKind.Binary, new byte[128]);

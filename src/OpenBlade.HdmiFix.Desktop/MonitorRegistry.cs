@@ -140,8 +140,9 @@ internal sealed class MonitorRegistry : IMonitorOverrideStore
             throw new SavedMonitorReadException(SavedMonitorReadFailure.EdidInvalid);
         if (EdidPatchPlanner.MonitorModelId(edid).Length == 0)
         {
+            var count = EdidPatchPlanner.InspectExtensionCount(edid);
             var incomplete = edid.Length < 128 || edid.Length % 128 != 0
-                || (edid[126] + 1) * 128 > edid.Length;
+                || (count.IsValid && count.ExpectedBytes > edid.Length);
             throw new SavedMonitorReadException(incomplete
                 ? SavedMonitorReadFailure.EdidIncomplete : SavedMonitorReadFailure.EdidInvalid);
         }

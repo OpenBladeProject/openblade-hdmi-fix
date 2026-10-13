@@ -29,8 +29,19 @@ public static partial class EdidPatchPlanner
         {
             int expectedBytes = (edid[126] + 1) * BlockSize;
             report.AppendLine($"Declared extension blocks: {edid[126]}; expected bytes: {expectedBytes}");
-            report.AppendLine("Block count: " + (edid.Length == expectedBytes ? "matches"
-                : edid.Length < expectedBytes ? "missing data" : "extra data"));
+            var count = InspectExtensionCount(edid);
+            int effectiveBytes = count.IsValid ? count.ExpectedBytes : expectedBytes;
+            report.AppendLine("Block count: " + (edid.Length == effectiveBytes
+                ? count.HasOverride ? "matches HDMI Forum override" : "matches"
+                : edid.Length < effectiveBytes ? "missing data" : "extra data"));
+            report.AppendLine("HDMI Forum extension-count override: " + (count.HasOverride ? "present" : "absent"));
+            if (!count.IsValid) report.AppendLine("Extension-count validation: " + count.Failure);
+            else
+            {
+                report.AppendLine($"Effective extension blocks: {count.Effective}; expected bytes: {count.ExpectedBytes}");
+                report.AppendLine("Effective block count: " + (edid.Length == count.ExpectedBytes ? "matches"
+                    : edid.Length < count.ExpectedBytes ? "missing data" : "extra data"));
+            }
             report.AppendLine($"EDID version: {edid[18]}.{edid[19]}");
         }
         else report.AppendLine("Declared extension blocks: unavailable");
