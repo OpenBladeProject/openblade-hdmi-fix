@@ -21,6 +21,7 @@ public static partial class EdidPatchPlanner
 {
     private const int BlockSize = 128;
     private const byte CtaExtensionTag = 0x02;
+    private const byte DisplayIdExtensionTag = 0x70;
     private const byte VendorSpecificDataBlockTag = 0x03;
     private const byte ExtendedDataBlockTag = 0x07;
     private const byte HdmiForumScdbExtendedTag = 0x79;
@@ -67,10 +68,18 @@ public static partial class EdidPatchPlanner
         for (int blockNumber = 1; blockNumber <= extensionCount; blockNumber++)
         {
             int blockStart = blockNumber * BlockSize;
-            if (original[blockStart] != CtaExtensionTag)
+            if (original[blockStart] == DisplayIdExtensionTag)
             {
+                if (!TryInspectDisplayIdBlock(original, blockNumber, out bool embeddedForum, out string displayIdFailure))
+                    return Result(PatchDisposition.Invalid, original, patched, displayIdFailure);
+                // Only top-level CTA capability fields are supported for mutation.
+                // An embedded copy must never remain uncapped after a successful patch.
+                if (embeddedForum)
+                    return Result(PatchDisposition.Unsupported, original, patched,
+                        "HDMI Forum capabilities are present inside DisplayID; this configuration cannot be patched unambiguously.");
                 continue;
             }
+            if (original[blockStart] != CtaExtensionTag) continue;
 
             if (!TryInspectCtaBlock(
                     original,
@@ -294,14 +303,22 @@ public static partial class EdidPatchPlanner
             return false;
         }
 
-        int relativeOffset = 4;
-        while (relativeOffset < dataBlockEnd)
+        return TryInspectCtaDataCollection(edid, blockNumber, blockStart + 4, blockStart + dataBlockEnd,
+            forumBlocks, ref hasAlternativeForumCapabilityBlock, out failure);
+    }
+
+    private static bool TryInspectCtaDataCollection(
+        byte[] edid, int blockNumber, int start, int end, List<ForumBlock> forumBlocks,
+        ref bool hasAlternativeForumCapabilityBlock, out string failure)
+    {
+        failure = string.Empty;
+        int absoluteOffset = start;
+        while (absoluteOffset < end)
         {
-            int absoluteOffset = blockStart + relativeOffset;
             byte header = edid[absoluteOffset];
             int payloadLength = header & 0x1F;
-            int nextRelativeOffset = relativeOffset + payloadLength + 1;
-            if (nextRelativeOffset > dataBlockEnd)
+            int nextAbsoluteOffset = absoluteOffset + payloadLength + 1;
+            if (nextAbsoluteOffset > end)
             {
                 failure = $"CTA extension block {blockNumber} contains a truncated data block.";
                 return false;
@@ -323,7 +340,7 @@ public static partial class EdidPatchPlanner
                 hasAlternativeForumCapabilityBlock = true;
             }
 
-            relativeOffset = nextRelativeOffset;
+            absoluteOffset = nextAbsoluteOffset;
         }
 
         return true;

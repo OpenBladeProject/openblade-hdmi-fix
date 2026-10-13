@@ -158,7 +158,11 @@ public sealed class EdidExtensionCountTests
         {
             edid[block * 128] = 0x70;
             edid[block * 128 + 1] = 0x20;
+            edid[block * 128 + 2] = 8;
+            edid[block * 128 + 5] = 0x7E;
+            edid[block * 128 + 7] = 5;
             edid[block * 128 + 10] = (byte)(0x30 + block);
+            edid[block * 128 + 13] = unchecked((byte)-edid.Skip(block * 128 + 1).Take(12).Sum(x => (int)x));
         }
         for (int block = 0; block < 4; block++) Checksum(edid, block);
         return edid;

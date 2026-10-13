@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Check CTA data inside DisplayID blocks before patching. Block configurations with additional HDMI Forum capabilities or malformed data, and preserve unrelated DisplayID data. ([#5](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/5))
+
 ## [0.2.4] - 2026-10-13
 
 ### Fixed
