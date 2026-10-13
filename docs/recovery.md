@@ -8,6 +8,10 @@ If Restore is unavailable, keep the backup folder and use **Copy details** to re
 
 Use the Windows account that created the backup. The app stores backups outside its extracted folder, so downloading another copy does not lose them. A missing or invalid backup prevents automatic restoration of the installed override.
 
+Backups from unfinished operations remain in the main backup folder. Finished backups are kept in an account-specific `history-` folder. The limit of 512 active backups prevents a new patch; it does not prevent Restore. If backups from another account are present, use that account to finish its recovery before patching again. Your own backups remain available for Restore.
+
+If the app shows **Saved capabilities changed**, its installed override matches a backup, but Windows has different EDID data for that connection. Keep the backup folder and copy the details to report the change. Restore stays unavailable until the monitor's identity and saved data can be verified.
+
 Do not upload backup JSON, temporary backup files, raw EDID, or registry exports. They can contain monitor serial numbers and machine-specific identifiers. Copied diagnostics omit those fields.
 
 If reconnecting still crashes the display stack, unplug the monitor. Recover through the laptop's internal display and reopen the app to inspect the saved connection. The app does not reconnect monitors, restart display devices, reset the GPU, or change display modes for you.

@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/OpenBlade.HdmiFix.Core/OpenBlade.HdmiFix.Core.csproj" />
+  <Project Path="src/OpenBlade.HdmiFix.Desktop/OpenBlade.HdmiFix.Desktop.csproj" />
+  <Project Path="tests/OpenBlade.HdmiFix.Tests/OpenBlade.HdmiFix.Tests.csproj" />
+  <Project Path="tests/OpenBlade.HdmiFix.Desktop.Tests/OpenBlade.HdmiFix.Desktop.Tests.csproj" />
+</Solution>
