@@ -83,6 +83,9 @@ foreach ($name in @('OpenBlade.HdmiFix.exe', 'OpenBlade.HdmiFix.dll', 'OpenBlade
 if ($env:PUBLISH_TEST_AFTER_DOTNET -eq 'dirty') {
     [IO.File]::AppendAllText((Join-Path $env:PUBLISH_TEST_ROOT 'README.md'), 'changed')
 }
+if ($env:PUBLISH_TEST_AFTER_DOTNET -eq 'checksum') {
+    [IO.File]::WriteAllText((Join-Path $env:PUBLISH_TEST_ROOT 'artifacts\OpenBlade.HdmiFix-1.2.3-win-x64.zip.sha256'), 'concurrent checksum')
+}
 if ($env:PUBLISH_TEST_AFTER_DOTNET -eq 'head') {
     & git -C $env:PUBLISH_TEST_ROOT commit --allow-empty -m 'move fixture head' | Out-Null
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -152,6 +155,7 @@ try {
         Assert-Test (-not (Test-Path -LiteralPath (Join-Path $collisionRoot 'artifacts\publish'))) 'Output collision left a publish folder.'
         Assert-Test ((Get-FileHash -LiteralPath $existingFile -Algorithm SHA256).Hash -eq $previousHash) 'Output collision changed the existing file.'
         $retryResult = Invoke-FixturePublish $collisionRoot
+        Assert-Test ($retryResult.ExitCode -ne 0) 'Retry unexpectedly succeeded despite the collision.'
         Assert-Test ($retryResult.Output -match 'release archive or checksum already exists') 'Retry failed on leftover publish output instead of the original collision.'
         Assert-Test (-not (Test-Path -LiteralPath $retryResult.Marker)) 'Retry invoked dotnet despite the collision.'
     }
@@ -171,6 +175,12 @@ try {
     Assert-Test ($headResult.Output -match 'source commit changed') 'A changed source commit did not report the commit-change requirement.'
     Assert-Test ((& git -C $headRoot rev-parse HEAD).Trim() -ne $originalHead) 'The fixture did not change HEAD after dotnet.'
     Assert-Test (-not (Test-Path -LiteralPath (Join-Path $headRoot 'artifacts\publish\build.json'))) 'A changed source commit received provenance.'
+
+    $checksumRoot = New-PublishFixture
+    $checksumResult = Invoke-FixturePublish $checksumRoot 'checksum'
+    Assert-Test ($checksumResult.ExitCode -ne 0) 'A checksum created during publishing was overwritten.'
+    Assert-Test (Test-Path -LiteralPath $checksumResult.Marker) 'The checksum race fixture did not invoke dotnet.'
+    Assert-Test ([IO.File]::ReadAllText((Join-Path $checksumRoot 'artifacts\OpenBlade.HdmiFix-1.2.3-win-x64.zip.sha256')) -eq 'concurrent checksum') 'A checksum created during publishing was changed.'
 
     $ignoredRoot = New-PublishFixture
     Write-TestFile (Join-Path $ignoredRoot 'artifacts\ignored-before-publish.txt') "ignored`r`n"

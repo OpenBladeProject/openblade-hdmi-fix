@@ -40,7 +40,10 @@ public sealed class PatcherBackend : IPatcherBackend
             notices.Add("The app couldn't verify your backups. Keep the backup folder. Patch and Restore are unavailable.");
         }
         var views = new List<MonitorView>();
-        foreach (var id in registry.EnumerateSavedInstances())
+        var savedInstances = registry.EnumerateSavedInstances(out var incompleteEnumeration);
+        if (incompleteEnumeration)
+            notices.Add("Some saved monitor entries couldn't be read. Other saved connections are shown below.");
+        foreach (var id in savedInstances)
         {
             var connected = present?.Contains(id);
             var connection = connected switch { true => "Connected", false => "Previously connected", _ => "Connection unknown" };
@@ -87,7 +90,9 @@ public sealed class PatcherBackend : IPatcherBackend
                 else if (state.Overrides.Blocks.Count != 0)
                 {
                     status = "Existing override";
-                    details = inventory.HasPrivateBackups
+                    details = !trustedBackups
+                        ? "The app couldn't verify the backup folder for this connection. Keep the folder and leave the monitor unplugged. Patch and Restore are unavailable."
+                        : inventory.HasPrivateBackups
                         ? "This connection has an override. A backup may belong to another Windows account. Open the app under the account that created it to check Restore."
                         : "This connection already has an override, but the app has no matching original backup. Use the tool that installed it to restore it first.";
                 }

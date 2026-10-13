@@ -10,17 +10,32 @@ internal sealed class MonitorRegistry : IMonitorOverrideStore
 {
     private const string DisplayRoot = @"SYSTEM\CurrentControlSet\Enum\DISPLAY";
 
-    public IReadOnlyList<string> EnumerateSavedInstances()
+    public IReadOnlyList<string> EnumerateSavedInstances(out bool incomplete)
     {
         using var root = Registry.LocalMachine.OpenSubKey(DisplayRoot);
-        if (root is null) return [];
-        var result = new List<string>();
-        foreach (var model in root.GetSubKeyNames().Order(StringComparer.OrdinalIgnoreCase))
+        if (root is null) { incomplete = false; return []; }
+        return EnumerateSavedInstances(root.GetSubKeyNames(), model =>
         {
             using var modelKey = root.OpenSubKey(model);
-            if (modelKey is null) continue;
-            foreach (var instance in modelKey.GetSubKeyNames().Order(StringComparer.OrdinalIgnoreCase))
-                result.Add($@"DISPLAY\{model}\{instance}");
+            return modelKey?.GetSubKeyNames();
+        }, out incomplete);
+    }
+
+    internal static IReadOnlyList<string> EnumerateSavedInstances(IEnumerable<string> models,
+        Func<string, string[]?> readInstances, out bool incomplete)
+    {
+        incomplete = false;
+        var result = new List<string>();
+        foreach (var model in models.Order(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var instances = readInstances(model);
+                if (instances is null) { incomplete = true; continue; }
+                foreach (var instance in instances.Order(StringComparer.OrdinalIgnoreCase))
+                    result.Add($@"DISPLAY\{model}\{instance}");
+            }
+            catch (Exception e) when (PatcherBackend.IsExpected(e)) { incomplete = true; }
         }
         return result;
     }

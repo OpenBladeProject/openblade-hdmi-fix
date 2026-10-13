@@ -6,7 +6,7 @@
 
 ### Fixed
 
-- Keep saved monitors visible when an entry or backup fails validation, and handle administrator-operation validation errors through the existing recovery messages. Refuse existing release archives and checksums before packaging starts. ([#2](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/2))
+- Keep saved monitors visible when an entry or backup fails validation, and handle administrator-operation validation errors through the existing recovery messages. Preserve readable connections when another saved model is inaccessible, and keep backup guidance accurate when inventory cannot be verified. Refuse existing release archives and checksums before packaging starts, and preserve checksums created during a build. ([#2](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/2))
 
 ## [0.2.0] - 2026-10-12
 

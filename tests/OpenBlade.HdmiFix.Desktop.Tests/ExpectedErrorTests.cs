@@ -40,6 +40,31 @@ public sealed class ExpectedErrorTests
     }
 
     [Fact]
+    public void UnreadableModelDoesNotHideOtherSavedConnections()
+    {
+        var instances = MonitorRegistry.EnumerateSavedInstances(["AAA0001", "BBB0002", "CCC0003"],
+            model => model == "BBB0002" ? throw new UnauthorizedAccessException() : ["fixture"], out var incomplete);
+        Assert.True(incomplete);
+        Assert.Equal(new[] { @"DISPLAY\AAA0001\fixture", @"DISPLAY\CCC0003\fixture" }, instances);
+    }
+
+    [Fact]
+    public void DisappearingModelReportsPartialEnumeration()
+    {
+        var instances = MonitorRegistry.EnumerateSavedInstances(["AAA0001", "BBB0002"],
+            model => model == "AAA0001" ? null : ["fixture"], out var incomplete);
+        Assert.True(incomplete);
+        Assert.Equal(@"DISPLAY\BBB0002\fixture", Assert.Single(instances));
+    }
+
+    [Fact]
+    public void EnumerationDoesNotHideUnexpectedFailures()
+    {
+        Assert.Throws<NullReferenceException>(() => MonitorRegistry.EnumerateSavedInstances(["AAA0001"],
+            _ => throw new NullReferenceException(), out _));
+    }
+
+    [Fact]
     public void UnexpectedFailuresRemainUnhandled()
     {
         Assert.False(PatcherBackend.IsExpected(new NullReferenceException()));

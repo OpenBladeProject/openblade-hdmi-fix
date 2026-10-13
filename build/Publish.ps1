@@ -64,5 +64,8 @@ $provenance = @{ version = $version; sourceCommit = [string]$sourceCommit; runti
 [IO.File]::WriteAllText((Join-Path $output 'build.json'), $provenance + "`r`n", [Text.UTF8Encoding]::new($false))
 Compress-Archive -LiteralPath $output -DestinationPath $archive
 $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-[IO.File]::WriteAllText("$archive.sha256", "$hash  $([IO.Path]::GetFileName($archive))`r`n", [Text.UTF8Encoding]::new($false))
+$checksumBytes = [Text.UTF8Encoding]::new($false).GetBytes("$hash  $([IO.Path]::GetFileName($archive))`r`n")
+$checksumStream = [IO.File]::Open("$archive.sha256", [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+try { $checksumStream.Write($checksumBytes, 0, $checksumBytes.Length) }
+finally { $checksumStream.Dispose() }
 Write-Output "Prepared $archive"
