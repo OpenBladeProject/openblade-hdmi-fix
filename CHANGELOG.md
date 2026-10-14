@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Include laptop, Windows, GPU-driver and saved monitor information in Copy details. Capture mode, HDR and NVIDIA VRR state for the exact active connection, with unavailable states for disconnected entries and failed queries. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
 ## [0.2.5] - 2026-10-13
 
 ### Fixed

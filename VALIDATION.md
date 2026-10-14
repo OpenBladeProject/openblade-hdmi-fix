@@ -11,7 +11,7 @@ Local checks cover:
 - WPF construction and synthetic-data rendering at normal and minimum widths, plus expanded diagnostics.
 - A self-contained Windows x64 payload.
 
-The Release solution build completed with zero warnings/errors, and 67 focused tests passed. Regression checks cover other monitor manufacturers, exact EDID-to-instance binding, invalid manufacturer encoding, cross-model patch/restore, strict recovery for other monitors, CTA zero-offset padding, recovery of version-1 backups, the 512-active-backup boundary, private account records, and changed cached EDID data. Temporary Git fixtures verify that packaging rejects dirty source and commit changes while permitting ignored build output. A read-only scan on the development machine returned both a connected internal display and a previously connected saved record. No G93SC entry was present. Normal/minimum and expanded preview screenshots used synthetic data; the real scan applied no override.
+The Release solution build completed with zero warnings/errors, and 182 tests passed (111 core and 71 desktop). Regression checks cover other monitor manufacturers, exact EDID-to-instance binding, invalid manufacturer encoding, cross-model patch/restore, strict recovery for other monitors, CTA zero-offset padding, recovery of version-1 backups, the 512-active-backup boundary, private account records, and changed cached EDID data. Temporary Git fixtures verify that packaging rejects dirty source and commit changes while permitting ignored build output. A read-only scan on the development machine returned both a connected internal display and a previously connected saved record. No G93SC entry was present. Normal/minimum and expanded preview screenshots used synthetic data; the real scan applied no override.
 
 Fixtures are synthetic and do not contain a real monitor serial number. A rendered preview does not validate cached EDID availability on a particular computer, UAC, installed registry permissions, or actual HDMI link negotiation.
 
@@ -22,3 +22,9 @@ Before marking a release validated, record the exact source commit, laptop model
 With the monitor unplugged, inspect the actual historical entry, save its confirmed original, apply one typed patch after fresh admission, and verify the override by readback. In an attended test, reconnect and check the monitor's intended resolution and refresh rate, HDR, VRR using monitor feedback, HDMI audio, and stability during representative use. Record what was exercised. Disconnect, restore the original override, and verify restoration by readback. Confirm reboot/reconnect behavior only after the initial test succeeds.
 
 No physical patch, UAC mutation, reconnect, or sleep/resume trial is authorized by a software build or preview. Sleep/resume testing requires fresh approval from a present user immediately beforehand.
+
+## Connection diagnostics
+
+Tests cover Windows and NVIDIA ABI sizes, exact display-instance binding, ambiguous paths, distinct HDR/VRR states, unknown queries, disconnected entries, independent read failures and copied-report privacy. A read-only integration scan captured the development laptop, Windows build, both GPU driver versions and the internal display's current mode/HDR. The NVIDIA query could not resolve that internal target and returned unknown VRR fields. No mutation was attempted.
+
+User testing with 0.2.5 found that the patch applies and the laptop no longer hard crashes, but the G95 picture still blanks roughly every five seconds at both 120 Hz and 240 Hz, during use and idle. The remaining stability problem is tracked in [issue #6](https://github.com/OpenBladeProject/openblade-hdmi-fix/issues/6). The diagnostic additions help collect evidence; they do not resolve that blanking.
