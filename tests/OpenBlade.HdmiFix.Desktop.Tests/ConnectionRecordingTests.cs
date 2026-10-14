@@ -157,7 +157,7 @@ public sealed class ConnectionRecordingTests
 
         ConnectionRecordingResult result = await run.WaitAsync(TimeSpan.FromSeconds(1));
         Assert.False(result.Completed);
-        Assert.InRange(accepted, 1, 128);
+        Assert.InRange(accepted, 1, 192);
         JsonElement[] markers = ReadTimeline(result.DirectoryPath).Where(entry =>
             entry.GetProperty("kind").GetString() is "blackout" or "display-change" or "device-change").ToArray();
         Assert.Equal(accepted, markers.Length);
@@ -206,6 +206,88 @@ public sealed class ConnectionRecordingTests
         string events = File.ReadAllText(Path.Combine(result.DirectoryPath, "events.json"));
         Assert.Contains("Unavailable", events);
         Assert.DoesNotContain("private", events);
+    }
+
+    [Fact]
+    public async Task AutomaticNotificationBurstLeavesBlackoutCapacityAndPreservesTerminalRecord()
+    {
+        using var output = new TemporaryDirectory();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var recording = Create(output.Path, Monitor("selected", "Previously connected"),
+            () => { started.TrySetResult(); return new([]); }, TimeSpan.FromSeconds(3), TimeSpan.FromMilliseconds(5));
+        var run = recording.RunAsync(CancellationToken.None);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        int automatic = Enumerable.Range(0, 300).Count(_ => recording.NotifyDeviceChange());
+        int blackouts = Enumerable.Range(0, 100).Count(_ => recording.MarkBlackout());
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(128, automatic);
+        Assert.Equal(64, blackouts);
+        var entries = ReadTimeline(result.DirectoryPath);
+        Assert.Equal(64, entries.Count(e => e.GetProperty("kind").GetString() == "blackout"));
+        Assert.Equal(128, entries.Count(e => e.GetProperty("kind").GetString() == "device-change"));
+        Assert.Equal("stop", entries[^1].GetProperty("kind").GetString());
+        Assert.Equal("timeline-limit", entries[^1].GetProperty("status").GetString());
+        Assert.True(entries.Length <= 512);
+        Assert.False(result.Completed);
+        Assert.NotNull(result.BundlePath);
+    }
+
+    [Fact]
+    public async Task CompletionReportsSavingAndPrivateFolderFailureDoesNotLoseTheBundle()
+    {
+        using var output = new TemporaryDirectory();
+        ConnectionRecording? recording = null;
+        var progress = new InlineProgress();
+        recording = new ConnectionRecording(Monitor("selected", "Previously connected"), "Safe baseline", output.Path,
+            () => { File.WriteAllText(Path.Combine(recording!.DirectoryPath, "private"), "blocked optional folder"); return new([]); },
+            (_, _) => new("Events:Complete", []),
+            (directory, _) => { Directory.CreateDirectory(directory); return Task.FromResult("DisplayLog:Captured"); },
+            TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(10));
+        var result = await recording.RunAsync(CancellationToken.None, progress);
+        Assert.NotNull(result.BundlePath);
+        Assert.True(result.Completed);
+        Assert.True(progress.Last!.IsFinalizing);
+        Assert.False(recording.MarkBlackout());
+        Assert.Contains("Unavailable", File.ReadAllText(Path.Combine(result.DirectoryPath, "events.json")));
+    }
+
+    [Fact]
+    public void UserProvidedContextRetainsOrdinaryPunctuationAndBoundsControlText()
+    {
+        string report = MainWindow.FormatRecordingContext("LS49CG954", "M2T101 v1:02", "USB-C/HDMI 2.1 dock @ 120 Hz");
+        Assert.Contains("M2T101 v1:02", report);
+        Assert.Contains("USB-C/HDMI 2.1 dock @ 120 Hz", report);
+        Assert.Contains("not provided", MainWindow.FormatRecordingContext("", "", ""));
+        string bounded = MainWindow.FormatRecordingContext(new string('m', 200), "x\nprivate-field: value", "Cable\u200b");
+        Assert.DoesNotContain(new string('m', 81), bounded);
+        Assert.DoesNotContain("\u200b", bounded, StringComparison.Ordinal);
+        Assert.DoesNotContain("x\nprivate-field", bounded);
+    }
+
+    [Fact]
+    public async Task MarkerDuringLiveReadPrecedesTheLaterSample()
+    {
+        using var output = new TemporaryDirectory();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<LiveDisplayScan>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var recording = Create(output.Path, Monitor("selected", "Previously connected"),
+            () => { entered.TrySetResult(); return release.Task.GetAwaiter().GetResult(); },
+            TimeSpan.FromMilliseconds(80), TimeSpan.FromMilliseconds(10));
+        var run = recording.RunAsync(CancellationToken.None);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.True(recording.MarkBlackout());
+        release.SetResult(new([]));
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(2));
+        var entries = ReadTimeline(result.DirectoryPath);
+        long[] times = entries.Select(e => e.GetProperty("elapsedMilliseconds").GetInt64()).ToArray();
+        Assert.Equal(times.Order(), times);
+        Assert.Equal("blackout", entries[1].GetProperty("kind").GetString());
+    }
+
+    private sealed class InlineProgress : IProgress<RecordingProgress>
+    {
+        internal RecordingProgress? Last { get; private set; }
+        public void Report(RecordingProgress value) => Last = value;
     }
 
     private static ConnectionRecording Create(string outputRoot, MonitorView selected,

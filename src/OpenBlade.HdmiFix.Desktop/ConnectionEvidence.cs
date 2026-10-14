@@ -26,7 +26,7 @@ internal static class ConnectionEvidence
     private const int EvtQueryForwardDirection = 0x100;
     private const int EvtRenderEventXml = 1;
     private const int DisplayLogTimeoutMilliseconds = 10_000;
-    private static readonly TimeSpan NativeQueryDeadline = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan NativeQueryDeadline = TimeSpan.FromSeconds(3);
 
     private static readonly IReadOnlyDictionary<string, string> AllowedProviders =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

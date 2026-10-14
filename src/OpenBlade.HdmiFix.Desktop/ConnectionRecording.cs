@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 
 namespace OpenBlade.HdmiFix.Desktop;
 
-internal sealed record RecordingProgress(TimeSpan Elapsed, int Samples, int Blackouts);
+internal sealed record RecordingProgress(TimeSpan Elapsed, int Samples, int Blackouts, bool IsFinalizing = false);
 
 internal sealed record ConnectionRecordingResult(
     string DirectoryPath, string? BundlePath, bool Completed, string Message);
@@ -15,7 +15,10 @@ internal sealed record ConnectionRecordingResult(
 internal sealed class ConnectionRecording
 {
     private const int MaximumTimelineEntries = 512;
-    private const int MaximumMarkers = 128;
+    private const int MaximumMarkers = 192;
+    private const int MaximumBlackouts = 64;
+    private const int MaximumAutomaticMarkers = 128;
+    private const long ReservedTailBytes = MaximumMarkers * 512L + 1024;
     private const long MaximumTimelineBytes = 4 * 1024 * 1024;
     private const int MaximumBaselineCharacters = 256 * 1024;
     private const int MaximumEvidenceEvents = 256;
@@ -127,11 +130,12 @@ internal sealed class ConnectionRecording
 
         try
         {
+            Report(progress, 0);
             Directory.CreateDirectory(DirectoryPath);
             WriteDurableText(Path.Combine(DirectoryPath, "report.txt"), baselineReport);
             string timelinePath = Path.Combine(DirectoryPath, "timeline.jsonl");
             using var file = new FileStream(timelinePath, FileMode.CreateNew, FileAccess.Write,
-                FileShare.Read, 4096, FileOptions.WriteThrough);
+                FileShare.Read, 4096, FileOptions.None);
             using var writer = new StreamWriter(file, new UTF8Encoding(false), 4096, leaveOpen: true);
 
             AppendTimeline(writer, file, RecordingEntry.Start(startedUtc), ref timelineEntries, ref timelineFull);
@@ -160,7 +164,19 @@ internal sealed class ConnectionRecording
                     break;
                 }
 
-                RecordingEntry sample = CreateSample(capture);
+                // Acquire marker timestamps and the sample timestamp together, then
+                // release the lock before disk I/O so UI notifications stay responsive.
+                PendingMarker[] beforeSample;
+                RecordingEntry sample;
+                lock (stateLock)
+                {
+                    beforeSample = markers.ToArray();
+                    markers.Clear();
+                    sample = CreateSample(capture);
+                }
+                foreach (PendingMarker marker in beforeSample)
+                    AppendTimeline(writer, file, RecordingEntry.Marker(marker), ref timelineEntries, ref timelineFull, final: true);
+                if (timelineFull) break;
                 if (AppendTimeline(writer, file, sample, ref timelineEntries, ref timelineFull))
                 {
                     samples++;
@@ -192,13 +208,14 @@ internal sealed class ConnectionRecording
                 finalMarkers = markers.ToArray();
                 markers.Clear();
             }
+            Report(progress, samples, finalizing: true);
             foreach (PendingMarker marker in finalMarkers)
             {
-                AppendTimeline(writer, file, RecordingEntry.Marker(marker), ref timelineEntries, ref timelineFull);
+                AppendTimeline(writer, file, RecordingEntry.Marker(marker), ref timelineEntries, ref timelineFull, final: true);
             }
             AppendTimeline(writer, file, RecordingEntry.Stop(DateTimeOffset.UtcNow, clock.Elapsed,
                 completed ? "duration-complete" : token.IsCancellationRequested ? "requested-stop" : "timeline-limit"),
-                ref timelineEntries, ref timelineFull);
+                ref timelineEntries, ref timelineFull, final: true);
             writer.Flush();
             file.Flush(flushToDisk: true);
             writer.Dispose();
@@ -240,7 +257,8 @@ internal sealed class ConnectionRecording
         lock (stateLock)
         {
             if (state != 1 || clock is null
-                || acceptedBlackouts + acceptedDisplayChanges + acceptedDeviceChanges >= MaximumMarkers)
+                || (kind == "blackout" ? acceptedBlackouts >= MaximumBlackouts
+                    : acceptedDisplayChanges + acceptedDeviceChanges >= MaximumAutomaticMarkers))
             {
                 return false;
             }
@@ -331,14 +349,15 @@ internal sealed class ConnectionRecording
         }
         foreach (PendingMarker marker in pending)
         {
-            AppendTimeline(writer, file, RecordingEntry.Marker(marker), ref entries, ref timelineFull);
+            AppendTimeline(writer, file, RecordingEntry.Marker(marker), ref entries, ref timelineFull, final: true);
         }
     }
 
     private static bool AppendTimeline(StreamWriter writer, FileStream file, RecordingEntry entry,
-        ref int entries, ref bool timelineFull)
+        ref int entries, ref bool timelineFull, bool final = false)
     {
-        if (timelineFull || entries >= MaximumTimelineEntries)
+        int entryLimit = final ? MaximumTimelineEntries : MaximumTimelineEntries - MaximumMarkers - 1;
+        if ((!final && timelineFull) || entries >= entryLimit)
         {
             timelineFull = true;
             return false;
@@ -346,7 +365,8 @@ internal sealed class ConnectionRecording
 
         string line = JsonSerializer.Serialize(entry, JsonOptions);
         long bytes = Encoding.UTF8.GetByteCount(line) + 2L;
-        if (file.Position + bytes > MaximumTimelineBytes)
+        long byteLimit = final ? MaximumTimelineBytes : MaximumTimelineBytes - ReservedTailBytes;
+        if (file.Position + bytes > byteLimit)
         {
             timelineFull = true;
             return false;
@@ -364,7 +384,6 @@ internal sealed class ConnectionRecording
         using var timeout = new CancellationTokenSource(FinalizationWait);
         Task<EvidenceEvents> eventsTask = Task.Run(() => readEvents(from, to));
         string privateDirectory = Path.Combine(DirectoryPath, "private");
-        Directory.CreateDirectory(privateDirectory);
         Task<string> logTask;
         try
         {
@@ -503,12 +522,12 @@ internal sealed class ConnectionRecording
     private static void WriteDurableBytes(string path, byte[] value)
     {
         using var stream = new FileStream(path, FileMode.Create, FileAccess.Write,
-            FileShare.Read, 4096, FileOptions.WriteThrough);
+            FileShare.Read, 4096, FileOptions.None);
         stream.Write(value);
         stream.Flush(flushToDisk: true);
     }
 
-    private void Report(IProgress<RecordingProgress>? progress, int samples)
+    private void Report(IProgress<RecordingProgress>? progress, int samples, bool finalizing = false)
     {
         if (progress is null)
         {
@@ -516,7 +535,7 @@ internal sealed class ConnectionRecording
         }
         try
         {
-            progress.Report(new(clock?.Elapsed ?? TimeSpan.Zero, samples, acceptedBlackouts));
+            progress.Report(new(clock?.Elapsed ?? TimeSpan.Zero, samples, acceptedBlackouts, finalizing));
         }
         catch (Exception error) when (IsRecoverable(error))
         {

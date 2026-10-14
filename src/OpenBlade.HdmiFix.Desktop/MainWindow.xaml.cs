@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private string? _lastRecordingDirectory;
     private bool _closeAfterRecording;
     private bool _finishingRecording;
+    private bool _recordingReady;
 
     public MainWindow(IPatcherBackend backend, bool previewMode = false)
     {
@@ -223,9 +224,7 @@ public partial class MainWindow : Window
         ConnectionRecording recording;
         try
         {
-            string context = "\n\nUser-provided context (not detected):\nMonitor model: " + DiagnosticValues.Text(RecordingModelText.Text, 80)
-                + "\nMonitor firmware: " + DiagnosticValues.Text(RecordingFirmwareText.Text, 32)
-                + "\nCable, adapter or dock: " + DiagnosticValues.Text(RecordingCableText.Text);
+            string context = FormatRecordingContext(RecordingModelText.Text, RecordingFirmwareText.Text, RecordingCableText.Text);
             recording = new ConnectionRecording(selected, _backend.DiagnosticText(selected) + context, outputRoot);
         }
         catch (Exception ex) when (ex is not (OutOfMemoryException or StackOverflowException or AccessViolationException))
@@ -237,6 +236,7 @@ public partial class MainWindow : Window
         _recording = recording;
         _recordingCancellation = cancellation;
         _finishingRecording = false;
+        _recordingReady = false;
         _lastRecordingDirectory = null;
         RecordingProgressBar.Value = 0;
         RecordingProgressBar.Visibility = Visibility.Visible;
@@ -251,6 +251,16 @@ public partial class MainWindow : Window
         var progress = new Progress<RecordingProgress>(value =>
         {
             if (!ReferenceEquals(_recording, recording) || _finishingRecording) return;
+            _recordingReady = true;
+            if (value.IsFinalizing)
+            {
+                _finishingRecording = true;
+                RecordingStatusText.Text = "Saving the recording and collecting Windows logs…";
+                MarkBlackoutButton.IsEnabled = false;
+                StopRecordingButton.IsEnabled = false;
+                return;
+            }
+            MarkBlackoutButton.IsEnabled = true;
             RecordingProgressBar.Value = Math.Min(60, value.Elapsed.TotalSeconds);
             int remaining = Math.Max(0, 60 - (int)value.Elapsed.TotalSeconds);
             RecordingStatusText.Text = remaining > 0
@@ -259,7 +269,7 @@ public partial class MainWindow : Window
         });
         try
         {
-            ConnectionRecordingResult result = await recording.RunAsync(cancellation.Token, progress);
+            ConnectionRecordingResult result = await Task.Run(() => recording.RunAsync(cancellation.Token, progress));
             _lastRecordingDirectory = result.DirectoryPath;
             RecordingStatusText.Text = result.Message;
             OpenRecordingButton.Visibility = Directory.Exists(_lastRecordingDirectory) ? Visibility.Visible : Visibility.Collapsed;
@@ -286,8 +296,9 @@ public partial class MainWindow : Window
 
     private void MarkBlackoutButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_recording?.MarkBlackout() == true)
-            RecordingStatusText.Text = "Blackout marked. Recording continues.";
+        RecordingStatusText.Text = _recording?.MarkBlackout() == true
+            ? "Blackout marked. Recording continues."
+            : "The blackout mark was not saved. Recording has stopped or the mark limit was reached.";
     }
 
     private void StopRecordingButton_Click(object sender, RoutedEventArgs e)
@@ -311,6 +322,20 @@ public partial class MainWindow : Window
         {
             RecordingStatusText.Text = "The recording folder could not be opened. Recordings are saved in Local AppData, under OpenBlade.HdmiFix\\Recordings.";
         }
+    }
+
+    internal static string FormatRecordingContext(string model, string firmware, string cable)
+    {
+        static string Value(string value, int limit)
+        {
+            string clean = new(value.Where(c => !char.IsControl(c)
+                && char.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.Format).ToArray());
+            clean = clean.Trim();
+            return clean.Length == 0 ? "not provided" : clean[..Math.Min(clean.Length, limit)];
+        }
+        return "\n\nUser-provided context (not detected):\nMonitor model: " + Value(model, 80)
+            + "\nMonitor firmware: " + Value(firmware, 32)
+            + "\nCable, adapter or dock: " + Value(cable, 160);
     }
 
     private IntPtr ObserveDisplayMessages(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -385,7 +410,7 @@ public partial class MainWindow : Window
         MonitorSelector.IsEnabled = idle;
         RecordingContextExpander.IsEnabled = idle;
         RecordConnectionButton.IsEnabled = idle && !_previewMode && _selectedMonitor is not null;
-        MarkBlackoutButton.IsEnabled = recording && !_finishingRecording;
+        MarkBlackoutButton.IsEnabled = recording && _recordingReady && !_finishingRecording;
         StopRecordingButton.IsEnabled = recording && !_finishingRecording;
         PatchButton.IsEnabled = canMutate && _selectedMonitor!.CanPatch;
         RestoreButton.IsEnabled = canMutate && _selectedMonitor!.CanRestore;
