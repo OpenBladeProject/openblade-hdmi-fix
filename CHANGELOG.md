@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.3.1] - 2026-10-14
+
 ### Fixed
 
 - Identify the connected built-in screen in plain language. Recover interrupted connection recordings on the next launch and offer a partial diagnostic ZIP. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
