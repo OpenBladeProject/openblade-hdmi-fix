@@ -2,9 +2,13 @@
 
 ## Unreleased
 
+## [0.2.6] - 2026-10-14
+
 ### Fixed
 
 - Include laptop, Windows, GPU-driver and saved monitor information in Copy details. Capture mode, HDR and NVIDIA VRR state for the exact active connection, with unavailable states for disconnected entries and failed queries. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
+- Preserve failed active-display matching in copied diagnostics, identify DisplayPort USB tunnels, and keep optional diagnostic failures from blocking saved-monitor inspection. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
 
 ## [0.2.5] - 2026-10-13
 
@@ -58,3 +62,5 @@
 [0.2.4]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.3...v0.2.4
 
 [0.2.5]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.4...v0.2.5
+
+[0.2.6]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.5...v0.2.6

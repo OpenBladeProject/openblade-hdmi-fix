@@ -17,7 +17,8 @@ internal sealed record LiveDisplayDiagnostics(
     string VrrActive,
     string Error = "");
 
-internal sealed record LiveDisplayScan(IReadOnlyList<LiveDisplayDiagnostics> Displays, string Failure = "");
+internal sealed record LiveDisplayScan(
+    IReadOnlyList<LiveDisplayDiagnostics> Displays, string Failure = "", bool HasUnresolvedPaths = false);
 
 internal static class LiveDisplayDiagnosticsReader
 {
@@ -196,7 +197,17 @@ internal static class LiveDisplayDiagnosticsReader
                 JoinErrors(candidate.Error, hdr.Error, vrr.Error)));
         }
 
-        return new(displays, failure);
+        bool unresolved = candidates.Any(candidate => candidate.InstanceId.Length == 0);
+        if (unresolved)
+        {
+            // These failures belong to unresolved paths, not the selected monitor.
+            // Retain bounded numeric categories without exposing interface paths.
+            var errors = candidates.Where(candidate => candidate.InstanceId.Length == 0)
+                .Select(candidate => candidate.Error.Length == 0 ? "Binding:Unavailable" : DiagnosticValues.Status(candidate.Error))
+                .Distinct(StringComparer.Ordinal).Take(2).ToArray();
+            failure = JoinErrors(failure, "BindingIncomplete", JoinErrors(errors));
+        }
+        return new(displays, failure, unresolved);
     }
 
     internal static HdrCapture DecodeHdr(uint flags, uint activeColorMode)
@@ -384,11 +395,24 @@ internal static class LiveDisplayDiagnosticsReader
 
     private static string FormatConnection(int technology) => technology switch
     {
-        5 => "HDMI",
-        10 => "DisplayPort",
-        11 or 6 or unchecked((int)0x80000000) => "Internal",
         -1 => "Other",
-        _ => "Other",
+        0 => "VGA",
+        1 => "S-Video",
+        2 => "Composite video",
+        3 => "Component video",
+        4 => "DVI",
+        5 => "HDMI",
+        8 => "D-JPN",
+        9 => "SDI",
+        10 => "DisplayPort",
+        11 or 6 or 13 or unchecked((int)0x80000000) => "Internal",
+        12 => "UDI",
+        14 => "SDTV dongle",
+        15 => "Miracast",
+        16 => "Indirect wired",
+        17 => "Virtual display",
+        18 => "DisplayPort USB tunnel",
+        _ => $"Unknown (technology {technology})",
     };
 
     internal static string SanitizeName(string? value)

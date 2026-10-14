@@ -30,6 +30,7 @@ internal static class DiagnosticReport
         string unavailable = selected.ConnectionLabel == "Previously connected"
             ? "unavailable (selected saved connection is disconnected)"
             : matches.Length > 1 ? "unknown (multiple active paths match this connection)"
+            : live.HasUnresolvedPaths ? "unknown (active display matching was incomplete)"
             : live.Failure.Length != 0 ? "unknown (live display query unavailable)"
             : "unavailable (no active path matches this saved connection)";
         if (selected.ConnectionLabel == "Previously connected" || matches.Length != 1)
@@ -37,7 +38,8 @@ internal static class DiagnosticReport
             string state = unavailable.StartsWith("unknown", StringComparison.Ordinal) ? "unknown" : "unavailable";
             return "Live display settings: " + unavailable + "\nLive monitor name: " + state
                 + "\nCurrent mode: " + state + "\nHDR: " + state
-                + "\nG-SYNC or Adaptive Sync (NVIDIA): " + state;
+                + "\nG-SYNC or Adaptive Sync (NVIDIA): " + state
+                + (live.Failure.Length == 0 ? "" : "\nLive display query: " + DiagnosticValues.Status(live.Failure));
         }
         var display = matches[0];
         var lines = new List<string>
@@ -53,6 +55,7 @@ internal static class DiagnosticReport
             "Monitor Adaptive Sync menu setting: unknown (check the monitor menu)",
         };
         if (display.Error.Length != 0) lines.Add("Live display read: " + DiagnosticValues.Status(display.Error));
+        if (live.Failure.Length != 0) lines.Add("Other active display reads: " + DiagnosticValues.Status(live.Failure));
         return string.Join("\n", lines);
     }
 }

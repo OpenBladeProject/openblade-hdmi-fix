@@ -148,6 +148,70 @@ public sealed class LiveDisplayDiagnosticsTests
         Assert.Equal(expected, LiveDisplayDiagnosticsReader.SanitizeName(value));
     }
 
+    [Fact]
+    public void UnresolvedPathPreservesNumericBindingFailureWithoutAttributingItsSettings()
+    {
+        var unresolved = Candidate("private-interface-path", "", 1, "Unbound") with { Error = "BindingOpen:13" };
+        var scan = LiveDisplayDiagnosticsReader.BuildScan([unresolved],
+            _ => new("active", ""), _ => new("Yes", "Yes", "Yes", "Yes", ""));
+        var selected = new MonitorView(@"DISPLAY\SAM74AF\fixture", "Odyssey", "Connected", "Connection TEST",
+            "Patch installed", "", false, false, null);
+        string report = DiagnosticReport.FormatLiveDisplay(selected, scan);
+        Assert.True(scan.HasUnresolvedPaths);
+        Assert.Contains("active display matching was incomplete", report);
+        Assert.Contains("BindingOpen:13", report);
+        Assert.DoesNotContain("no active path matches", report);
+        Assert.DoesNotContain("5120 x 1440", report);
+        Assert.DoesNotContain("private-interface-path", report);
+    }
+
+    [Fact]
+    public void PartialBindingFailuresKeepTheIndependentExactMatchReadable()
+    {
+        var resolved = Candidate("private-valid-path", @"DISPLAY\SAM74AF\fixture", 1, "Odyssey");
+        var unresolved = Candidate("private-invalid-path", "", 2, "Unbound") with { Error = "BindingDetail:2" };
+        var scan = LiveDisplayDiagnosticsReader.BuildScan([resolved, unresolved],
+            _ => new("active", ""), _ => new("Yes", "Yes", "Yes", "No", ""));
+        var selected = new MonitorView(resolved.InstanceId, "Odyssey", "Connected", "Connection TEST",
+            "Patch installed", "", false, false, null);
+        string report = DiagnosticReport.FormatLiveDisplay(selected, scan);
+        Assert.Contains("Current mode: 5120 x 1440, 120 Hz", report);
+        Assert.Contains("HDR: active", report);
+        Assert.Contains("Other active display reads: BindingIncomplete; BindingDetail:2", report);
+        Assert.DoesNotContain("private-", report);
+    }
+
+    [Fact]
+    public void UnresolvedFailureSummaryIsBoundedAndRejectsPrivateText()
+    {
+        var candidates = Enumerable.Range(1, 64).Select(i => Candidate("private-path", "", (uint)i, "Unbound") with
+            { Error = i == 1 ? @"C:\Users\private-owner" : $"BindingOpen:{i}" }).ToArray();
+        var scan = LiveDisplayDiagnosticsReader.BuildScan(candidates,
+            _ => new("Unknown", ""), _ => LiveDisplayDiagnosticsReader.VrrCapture.Unknown(""));
+        Assert.True(scan.Failure.Length < 160);
+        Assert.DoesNotContain("private", scan.Failure);
+        Assert.Contains("BindingIncomplete", scan.Failure);
+    }
+
+    [Theory]
+    [InlineData(18, "DisplayPort USB tunnel")]
+    [InlineData(10, "DisplayPort")]
+    [InlineData(11, "Internal")]
+    [InlineData(13, "Internal")]
+    [InlineData(4, "DVI")]
+    [InlineData(15, "Miracast")]
+    [InlineData(16, "Indirect wired")]
+    [InlineData(17, "Virtual display")]
+    [InlineData(-1, "Other")]
+    [InlineData(123, "Unknown (technology 123)")]
+    public void RecognizedConnectionTypesHaveAccurateLabels(int technology, string expected)
+    {
+        var candidate = Candidate("path", @"DISPLAY\SAM74AF\fixture", 1, "Odyssey") with { OutputTechnology = technology };
+        var scan = LiveDisplayDiagnosticsReader.BuildScan([candidate],
+            _ => new("Unknown", ""), _ => LiveDisplayDiagnosticsReader.VrrCapture.Unknown(""));
+        Assert.Equal(expected, Assert.Single(scan.Displays).Connection);
+    }
+
     private static LiveDisplayDiagnosticsReader.DisplayCandidate Candidate(
         string path, string instance, uint target, string name) => new(
             0x12345678,
