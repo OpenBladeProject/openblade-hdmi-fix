@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.3.0] - 2026-10-14
+
 ### Added
 
 - Include read-only SCDC FRL configuration, lane-lock and training-ready flags for the selected HDMI connection in recordings. Keep active DSC unknown and preserve the recording when telemetry is unavailable. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
@@ -74,3 +76,5 @@
 [0.2.5]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.4...v0.2.5
 
 [0.2.6]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.5...v0.2.6
+
+[0.3.0]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.6...v0.3.0
