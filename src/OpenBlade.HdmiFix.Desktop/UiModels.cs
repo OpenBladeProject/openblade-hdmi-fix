@@ -2,9 +2,9 @@ namespace OpenBlade.HdmiFix.Desktop;
 
 public sealed record MonitorView(
     string InstanceId, string Name, string ConnectionLabel, string InstanceLabel,
-    string Status, string Details, bool CanPatch, bool CanRestore, string? BackupPath, string ValidationWarning = "", SavedMonitorReadFailure? ReadFailure = null, string InspectionDetails = "", bool IsStaleInternalPanel = false)
+    string Status, string Details, bool CanPatch, bool CanRestore, string? BackupPath, string ValidationWarning = "", SavedMonitorReadFailure? ReadFailure = null, string InspectionDetails = "", bool IsStaleInternalPanel = false, bool IsInternalPanel = false)
 {
-    public string ActionHint => IsStaleInternalPanel
+    public string ActionHint => IsStaleInternalPanel || IsInternalPanel
         ? "Select the affected HDMI monitor to patch its saved connection."
         : "Keep the affected monitor unplugged until you have verified the patch or restore.";
 

@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Identify the connected built-in screen in plain language. Recover interrupted connection recordings on the next launch and offer a partial diagnostic ZIP. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
 - Explain stale built-in panel entries without asking users to unplug the internal screen. Keep Patch and Restore unavailable for those entries. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
 
 ## [0.3.0] - 2026-10-14

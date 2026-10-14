@@ -110,11 +110,15 @@ public sealed class PatcherBackend : IPatcherBackend
                 if (connected == true && (plan.Disposition == PatchDisposition.Ready || backup is not null))
                     details += " Unplug this monitor to use Patch or Restore.";
                 if (connected is null) details += " The app must check the connection before making changes.";
-                views.Add(new(id, name, connection, instanceLabel, status, details, canPatch, canRestore,
+                var view = new MonitorView(id, name, connection, instanceLabel, status, details, canPatch, canRestore,
                     backup is null ? null : Path.Combine(BackupDirectory, backup.Id + ".json"),
                     plan.Disposition is PatchDisposition.Ready or PatchDisposition.AlreadyCapped || backup is not null
                         ? MonitorWarnings.Unvalidated : string.Empty,
-                    InspectionDetails: inspected.Inspection));
+                    InspectionDetails: inspected.Inspection);
+                if (status == "Unsupported configuration" && !state.Overrides.KeyExists
+                    && StaleInternalPanel.IsActiveInternal(id, present, diagnosticSnapshot.Live))
+                    view = StaleInternalPanel.DescribeConnected(view);
+                views.Add(view);
             }
             catch (Exception e) when (IsExpected(e))
             {
@@ -215,7 +219,7 @@ public sealed class PatcherBackend : IPatcherBackend
         return $"OpenBlade HDMI Fix {version}\nMonitor ID: {monitor.InstanceId.Split('\\')[1]}\n"
             + $"Connection: {monitor.ConnectionLabel}\nSaved connection: {monitor.InstanceLabel}\nState: {monitor.Status}\n"
             + $"Patch available: {monitor.CanPatch}\nRestore available: {monitor.CanRestore}\n"
-            + (monitor.IsStaleInternalPanel ? monitor.Details + "\n" : "")
+            + (monitor.IsStaleInternalPanel || monitor.IsInternalPanel ? monitor.Details + "\n" : "")
             + (monitor.ReadFailure is { } reason
                 ? $"Read failure: {reason}\nReason: {SavedMonitorReadErrors.Describe(reason)}\n" : "")
             + (string.IsNullOrEmpty(monitor.ValidationWarning) ? "" : $"Validation: {monitor.ValidationWarning}\n")

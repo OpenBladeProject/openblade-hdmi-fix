@@ -39,6 +39,24 @@ internal static class StaleInternalPanel
         return matches.Count == 1 && matches[0].Connection == "Internal";
     }
 
+    internal static bool IsActiveInternal(string instanceId, HashSet<string>? present, LiveDisplayScan live)
+    {
+        if (present is null || !present.Contains(instanceId) || live.HasUnresolvedPaths || live.Failure.Length != 0)
+            return false;
+        var matches = live.Displays.Where(display => display.InstanceId.Equals(instanceId, StringComparison.OrdinalIgnoreCase)).ToArray();
+        return matches.Length == 1 && matches[0].Connection == "Internal";
+    }
+
+    internal static MonitorView DescribeConnected(MonitorView view) => view with
+    {
+        Status = "Built-in display",
+        Details = "This is your laptop's internal screen. Select an external HDMI monitor to use this patch.",
+        IsInternalPanel = true,
+        CanPatch = false,
+        CanRestore = false,
+        BackupPath = null,
+    };
+
     internal static MonitorView Describe(MonitorView view) => view with
     {
         Status = "Stale built-in display entry",

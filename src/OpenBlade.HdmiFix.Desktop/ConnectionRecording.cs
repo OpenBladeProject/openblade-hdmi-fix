@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO.Compression;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
@@ -120,6 +119,7 @@ internal sealed class ConnectionRecording
         int timelineEntries = 0;
         bool timelineFull = false;
         TimeSpan recordedElapsed = TimeSpan.Zero;
+        FileStream? sessionLock = null;
         startedUtc = DateTimeOffset.UtcNow;
         clock = Stopwatch.StartNew();
         lock (stateLock)
@@ -130,15 +130,17 @@ internal sealed class ConnectionRecording
 
         try
         {
-            Report(progress, 0);
             Directory.CreateDirectory(DirectoryPath);
+            sessionLock = RecordingRecovery.StartSession(DirectoryPath);
             WriteDurableText(Path.Combine(DirectoryPath, "report.txt"), baselineReport);
+            RecordingRecovery.WriteStartMetadata(DirectoryPath, startedUtc);
             string timelinePath = Path.Combine(DirectoryPath, "timeline.jsonl");
             using var file = new FileStream(timelinePath, FileMode.CreateNew, FileAccess.Write,
                 FileShare.Read, 4096, FileOptions.None);
             using var writer = new StreamWriter(file, new UTF8Encoding(false), 4096, leaveOpen: true);
 
             AppendTimeline(writer, file, RecordingEntry.Start(startedUtc), ref timelineEntries, ref timelineFull);
+            Report(progress, 0);
             while (!token.IsCancellationRequested && clock.Elapsed < duration && !timelineFull)
             {
                 DrainMarkers(writer, file, ref timelineEntries, ref timelineFull);
@@ -247,6 +249,7 @@ internal sealed class ConnectionRecording
                 state = 3;
             }
             Interlocked.Exchange(ref activeRecording, 0);
+            sessionLock?.Dispose();
         }
 
         return new(DirectoryPath, bundlePath, completed, message);
@@ -437,21 +440,54 @@ internal sealed class ConnectionRecording
 
     private string CreateBundle()
     {
-        string bundlePath = Path.Combine(DirectoryPath, "connection-recording.zip");
-        string temporaryPath = bundlePath + ".tmp";
-        using (var archive = ZipFile.Open(temporaryPath, ZipArchiveMode.Create))
+        return RecordingRecovery.CreateBundle(DirectoryPath, "connection-recording.zip",
+            new[] { "report.txt", "timeline.jsonl", "summary.txt", "events.json" }
+                .ToDictionary(name => name, name => File.ReadAllBytes(Path.Combine(DirectoryPath, name))));
+    }
+
+    // Deserialize only the recorder's known fields, then apply the same privacy
+    // rules as live capture. Extra properties never enter a recovered bundle.
+    internal static string SanitizeRecoveredEntry(string line, DateTimeOffset startedUtc,
+        bool first, long previousElapsed, out long elapsed, out string kind)
+    {
+        using JsonDocument document = JsonDocument.Parse(line);
+        JsonElement root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("kind", out _)
+            || !root.TryGetProperty("utc", out _) || !root.TryGetProperty("elapsedMilliseconds", out _))
+            throw new JsonException();
+        RecordingEntry entry = JsonSerializer.Deserialize<RecordingEntry>(line, JsonOptions)
+            ?? throw new JsonException();
+        elapsed = entry.ElapsedMilliseconds;
+        kind = entry.Kind;
+        if (entry.Utc.Kind != DateTimeKind.Utc || entry.Utc < startedUtc.UtcDateTime
+            || elapsed < previousElapsed || elapsed > 3_600_000
+            || (first ? kind != "start" || elapsed != 0 || entry.Utc != startedUtc.UtcDateTime
+                : kind is not ("sample" or "blackout" or "display-change" or "device-change" or "stop")))
+            throw new JsonException();
+        if (entry.Displays?.Count > 64) throw new JsonException();
+        if (kind == "sample" && (!root.TryGetProperty("selectedConnected", out _)
+            || entry.Displays is null)) throw new JsonException();
+        if (entry.Displays?.Any(display => display is null || display.Scdc?.Status is null) == true)
+            throw new JsonException();
+        var sanitized = entry with
         {
-            foreach (string name in new[] { "report.txt", "timeline.jsonl", "summary.txt", "events.json" })
+            Status = entry.Status is null ? null : DiagnosticValues.Status(entry.Status),
+            Displays = kind != "sample" ? null : entry.Displays?.Select(display => display with
             {
-                string source = Path.Combine(DirectoryPath, name);
-                if (File.Exists(source))
-                {
-                    archive.CreateEntryFromFile(source, name, CompressionLevel.Optimal);
-                }
-            }
-        }
-        File.Move(temporaryPath, bundlePath, overwrite: true);
-        return bundlePath;
+                Label = DiagnosticValues.Text(display.Label),
+                Name = DiagnosticValues.Text(display.Name),
+                Mode = DiagnosticValues.Text(display.Mode),
+                Connection = DiagnosticValues.Text(display.Connection),
+                Hdr = DiagnosticValues.Text(display.Hdr),
+                VrrCapability = DiagnosticValues.Text(display.VrrCapability),
+                VrrRequested = DiagnosticValues.Text(display.VrrRequested),
+                VrrEnabled = DiagnosticValues.Text(display.VrrEnabled),
+                VrrActive = DiagnosticValues.Text(display.VrrActive),
+                Error = string.IsNullOrEmpty(display.Error) ? "" : DiagnosticValues.Status(display.Error),
+                Scdc = SafeScdc(display.Scdc),
+            }).ToArray(),
+        };
+        return JsonSerializer.Serialize(sanitized, JsonOptions);
     }
 
     private string BuildSummary(bool completed, TimeSpan recordedElapsed, int samples, int timelineEntries,

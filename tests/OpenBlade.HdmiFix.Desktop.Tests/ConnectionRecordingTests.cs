@@ -9,6 +9,46 @@ using Xunit;
 public sealed class ConnectionRecordingTests
 {
     [Fact]
+    public async Task FirstReadyProgressRequiresDurableBaselineAndStartAndAnExclusiveSessionLock()
+    {
+        using var output = new TemporaryDirectory();
+        using var stop = new CancellationTokenSource();
+        int reads = 0;
+        var recording = Create(output.Path, Monitor("selected", "Previously connected"),
+            () => { reads++; return new([]); }, TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(10));
+        bool ready = false;
+        Exception? readinessError = null;
+        var progress = new InlineProgress
+        {
+            OnReport = value =>
+            {
+                if (value.IsFinalizing) return;
+                try
+                {
+                    Assert.Equal("Sanitized disconnected baseline", File.ReadAllText(Path.Combine(recording.DirectoryPath, "report.txt")));
+                    Assert.True(File.Exists(Path.Combine(recording.DirectoryPath, "session.json")));
+                    using var file = new FileStream(Path.Combine(recording.DirectoryPath, "timeline.jsonl"),
+                        FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    using var reader = new StreamReader(file);
+                    Assert.Equal("start", JsonDocument.Parse(reader.ReadToEnd()).RootElement.GetProperty("kind").GetString());
+                    var recovery = RecordingRecovery.Recover(output.Path);
+                    Assert.Empty(recovery.Recordings);
+                    Assert.Equal(0, recovery.UnavailableCount);
+                    ready = true;
+                }
+                catch (Exception error) { readinessError = error; }
+                stop.Cancel();
+            },
+        };
+        var result = await recording.RunAsync(stop.Token, progress);
+        Assert.Null(readinessError);
+        Assert.True(ready);
+        Assert.Equal(0, reads);
+        Assert.NotNull(result.BundlePath);
+        Assert.Empty(RecordingRecovery.Recover(output.Path).Recordings);
+    }
+
+    [Fact]
     public async Task Recording_UsesExactInstanceAfterDisconnectedBaselineAndCreatesSanitizedBundle()
     {
         using var output = new TemporaryDirectory();

@@ -67,3 +67,9 @@ The register/rate definitions were checked against [NVIDIA's HDMI source](https:
 The window uses OpenBlade's brand icon and Fluent action glyphs. Its dark surfaces follow the compact OpenBlade tray dashboard: a solid `#202020` window with WinUI 2.2.1 dark card, control, text and focus colors, plus OpenBlade's default `#47E10C` accent. This keeps the palette consistent without adding the Tray's Mica compositor dependency. The window title bar also requests Windows' dark appearance.
 
 Brand assets are copied unchanged from OpenBlade core commit `806b0fdceaa2aa8645bcad6213bf73954939e8b2`, under `src/OpenBlade.Tray/Assets/Brand`. The [OpenBlade accent manager](https://github.com/OSSBlade/openblade-core/blob/806b0fdceaa2aa8645bcad6213bf73954939e8b2/src/OpenBlade.Tray/AccentColorManager.cs) defines the green fill and black text on that accent. Platform action glyphs use the same Segoe Fluent Icons family as the Tray; the executable and window use `OpenBlade.ico`.
+
+## Interrupted recording recovery
+
+The recorder persists its baseline and start metadata before reporting that recording has started. Each timeline entry is flushed to storage. An exclusive session lock remains held through recording and finalization; another app instance skips that session. On launch, bounded recovery checks inactive recording folders and creates a separate partial ZIP from valid saved data. It does not issue display or SCDC queries, replay operations, or infer the cause of interruption.
+
+A torn final timeline entry is excluded. The original timeline and any unfinished archive remain in place. Recovery excludes unfamiliar files, private display logs and matching identifiers, and marks missing final evidence as unavailable. It does not fabricate a final sample or shutdown timestamp. A storage device can still lose recent writes during sudden power loss; software flushing cannot guarantee those bytes survived.

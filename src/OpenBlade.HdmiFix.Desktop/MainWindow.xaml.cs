@@ -12,6 +12,7 @@ public partial class MainWindow : Window
 {
     private readonly IPatcherBackend _backend;
     private readonly bool _previewMode;
+    private readonly string _recordingRoot;
     private readonly TaskCompletionSource _initialScanCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _isBusy;
     private MonitorView? _selectedMonitor;
@@ -23,8 +24,15 @@ public partial class MainWindow : Window
     private bool _recordingReady;
 
     public MainWindow(IPatcherBackend backend, bool previewMode = false)
+        : this(backend, previewMode, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "OpenBlade.HdmiFix", "Recordings"))
+    {
+    }
+
+    internal MainWindow(IPatcherBackend backend, bool previewMode, string recordingRoot)
     {
         ArgumentNullException.ThrowIfNull(backend);
+        _recordingRoot = recordingRoot;
         _backend = backend;
         _previewMode = previewMode;
         InitializeComponent();
@@ -78,12 +86,38 @@ public partial class MainWindow : Window
     {
         try
         {
-            await RefreshAsync();
+            string? recovered = await RecoverRecordingsAsync();
+            await RefreshAsync(completionMessage: recovered);
         }
         finally
         {
             _initialScanCompletion.TrySetResult();
         }
+    }
+
+    private async Task<string?> RecoverRecordingsAsync()
+    {
+        if (_previewMode) return null;
+        SetBusy(true, "Checking saved recordings…");
+        try
+        {
+            var recovery = await Task.Run(() => RecordingRecovery.Recover(_recordingRoot));
+            if (Directory.Exists(_recordingRoot))
+            {
+                _lastRecordingDirectory = recovery.Recordings.Count == 1 && recovery.UnavailableCount == 0 && !recovery.ScanLimitReached
+                    ? recovery.Recordings[0].DirectoryPath : _recordingRoot;
+                OpenRecordingButton.Visibility = Visibility.Visible;
+            }
+            if (!string.IsNullOrWhiteSpace(recovery.Message))
+                RecordingStatusText.Text = recovery.Message;
+            return recovery.Message;
+        }
+        catch (Exception error) when (PatcherBackend.IsExpected(error))
+        {
+            RecordingStatusText.Text = "Saved recordings could not be checked. Your files remain in the recording folder.";
+            return RecordingStatusText.Text;
+        }
+        finally { SetBusy(false); }
     }
 
     private async Task RefreshAsync(string? preferredInstanceId = null, string? completionMessage = null)
@@ -224,13 +258,11 @@ public partial class MainWindow : Window
     {
         if (_isBusy || _recording is not null || _selectedMonitor is null || _previewMode) return;
         MonitorView selected = _selectedMonitor;
-        string outputRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "OpenBlade.HdmiFix", "Recordings");
         ConnectionRecording recording;
         try
         {
             string context = FormatRecordingContext(RecordingModelText.Text, RecordingFirmwareText.Text, RecordingCableText.Text);
-            recording = new ConnectionRecording(selected, _backend.DiagnosticText(selected) + context, outputRoot);
+            recording = new ConnectionRecording(selected, _backend.DiagnosticText(selected) + context, _recordingRoot);
         }
         catch (Exception ex) when (ex is not (OutOfMemoryException or StackOverflowException or AccessViolationException))
         {
@@ -248,7 +280,7 @@ public partial class MainWindow : Window
         MarkBlackoutButton.Visibility = Visibility.Visible;
         StopRecordingButton.Visibility = Visibility.Visible;
         OpenRecordingButton.Visibility = Visibility.Collapsed;
-        RecordingStatusText.Text = "Recording started. Plug in the monitor, then mark each blackout. Stop and save is available at any time.";
+        RecordingStatusText.Text = "Preparing the recording. Keep the monitor unplugged until recording starts.";
         UpdateActionStates();
         RecordConnectionButton.Visibility = Visibility.Collapsed;
         RecordingCard.BringIntoView();

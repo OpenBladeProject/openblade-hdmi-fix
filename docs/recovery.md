@@ -37,3 +37,11 @@ The report includes the laptop model, Windows build, present graphics adapters a
 You can collect the system and saved-monitor information while the monitor is unplugged. Live settings are unavailable for a disconnected entry or a connection the app cannot match exactly. Unsupported or failed driver queries show unknown. The monitor's own Adaptive Sync menu setting is not exposed by these queries. EDID names can be shortened, so an exact retail model number may still need the monitor's About page.
 
 Include whether the laptop still crashes, how often the picture blanks, and the refresh rates already tested. Keep the original backups. Repeated blanking is not a reason to apply another patch or disable DSC without further evidence.
+
+## Interrupted connection recordings
+
+The app saves the baseline report and each timeline entry as recording proceeds. If the laptop crashes, reopen the app after restarting Windows. It recovers valid saved entries into a partial diagnostic ZIP and offers **Open recording folder**. It does not resume recording or reconnect the monitor.
+
+The recovered summary identifies an interrupted session. The final write may be missing or incomplete; recovery keeps the readable entries before it and preserves the original files. Windows events and the private display log may be unavailable if the crash occurred before collection. Data that never reached storage cannot be recovered.
+
+**Built-in display** identifies the connected laptop screen. **Stale built-in display entry** identifies an inactive saved record matching that screen. Select the external HDMI monitor for this workaround. Neither internal-panel entry is an HDMI patch target.

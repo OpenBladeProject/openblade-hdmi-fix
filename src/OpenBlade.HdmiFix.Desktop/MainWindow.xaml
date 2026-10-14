@@ -640,7 +640,7 @@
         <StackPanel>
           <TextBlock Text="Record connection" Style="{StaticResource SectionLabelStyle}" />
           <TextBlock Style="{StaticResource MutedTextStyle}"
-                     Text="Select the affected connection. Start recording, then connect the patched monitor. Recording stops after 60 seconds." />
+                     Text="Select the affected connection. Start recording, then connect the patched monitor. Recording stops after 60 seconds. Reopen the app after a crash to recover saved samples." />
           <Expander x:Name="RecordingContextExpander"
                     Header="Monitor and cable details (optional)"
                     Margin="0,9,0,0">

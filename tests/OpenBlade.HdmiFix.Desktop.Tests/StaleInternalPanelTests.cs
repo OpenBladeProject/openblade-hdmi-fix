@@ -101,6 +101,29 @@ public sealed class StaleInternalPanelTests
         Assert.False(Matches(fingerprint, edid[..128]));
     }
 
+    [Fact]
+    public void ConnectedInternalPanelHasPlainExplanationWithoutUnplugAdvice()
+    {
+        var present = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Active };
+        var live = new LiveDisplayScan([Display(Active, "Internal")]);
+        Assert.True(StaleInternalPanel.IsActiveInternal(Active, present, live));
+        var original = new MonitorView(Active, "Panel", "Connected", "Connection PREVIEW",
+            "Unsupported configuration", "HDMI Forum block absent", false, false, null);
+        var view = StaleInternalPanel.DescribeConnected(original);
+        Assert.Equal("Built-in display", view.Status);
+        Assert.Contains("internal screen", view.Details);
+        Assert.DoesNotContain("unplug", view.Details + view.ActionHint);
+        Assert.False(view.CanPatch);
+        Assert.False(view.CanRestore);
+        Assert.Contains(view.Details, PatcherBackend.FormatDiagnostics(view));
+        Assert.False(StaleInternalPanel.IsActiveInternal(Stale, present, live));
+        Assert.False(StaleInternalPanel.IsActiveInternal(Active, null, live));
+        Assert.False(StaleInternalPanel.IsActiveInternal(Active, present, live with { HasUnresolvedPaths = true }));
+        Assert.False(StaleInternalPanel.IsActiveInternal(Active, present, live with { Failure = "Topology:Unavailable" }));
+        Assert.False(StaleInternalPanel.IsActiveInternal(Active, present, new([Display(Active, "HDMI")])));
+        Assert.False(StaleInternalPanel.IsActiveInternal(Active, present, new([Display(Active, "Internal"), Display(Active, "Internal")])));
+    }
+
     private static bool Matches(string fingerprint, byte[] edid, string connection = "Internal") =>
         StaleInternalPanel.Matches(Stale, fingerprint,
             new(StringComparer.OrdinalIgnoreCase) { Active },
