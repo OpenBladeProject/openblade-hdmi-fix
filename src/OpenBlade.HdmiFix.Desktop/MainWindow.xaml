@@ -3,14 +3,16 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
         Title="OpenBlade HDMI Fix"
-        Width="720"
-        Height="760"
+        Icon="/OpenBlade.HdmiFix;component/Assets/Brand/OpenBlade.ico"
+        Width="600"
+        Height="640"
         MinWidth="560"
-        MinHeight="520"
+        MinHeight="560"
         Background="{StaticResource AppBackgroundBrush}"
         Foreground="{StaticResource ForegroundBrush}"
         FontFamily="Segoe UI"
-        FontSize="14"
+        FontSize="13"
+        UseLayoutRounding="True"
         WindowStartupLocation="CenterScreen"
         Closing="Window_Closing"
         Loaded="Window_Loaded">
@@ -20,79 +22,471 @@
     </Style>
     <Style x:Key="SectionLabelStyle" TargetType="TextBlock">
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Margin" Value="0,0,0,8" />
+      <Setter Property="Margin" Value="0,0,0,6" />
     </Style>
     <Style x:Key="MutedTextStyle" TargetType="TextBlock">
       <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
-      <Setter Property="LineHeight" Value="21" />
+      <Setter Property="LineHeight" Value="18" />
       <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
     <Style x:Key="CardStyle" TargetType="Border">
-      <Setter Property="Background" Value="White" />
+      <Setter Property="Background" Value="{StaticResource CardBackgroundBrush}" />
       <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="20" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="14" />
     </Style>
     <Style TargetType="Button">
-      <Setter Property="MinHeight" Value="44" />
-      <Setter Property="MinWidth" Value="112" />
-      <Setter Property="Padding" Value="16,8" />
-      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Padding" Value="12,5" />
+      <Setter Property="Background" Value="{StaticResource ControlBackgroundBrush}" />
+      <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Cursor" Value="Hand" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Grid>
+              <Border x:Name="OuterFocusRing"
+                      Margin="-3"
+                      BorderBrush="Transparent"
+                      BorderThickness="1"
+                      CornerRadius="8"
+                      IsHitTestVisible="False" />
+              <Border x:Name="InnerFocusRing"
+                      Margin="-1"
+                      BorderBrush="Transparent"
+                      BorderThickness="1"
+                      CornerRadius="6"
+                      IsHitTestVisible="False" />
+              <Border x:Name="Surface"
+                      Padding="{TemplateBinding Padding}"
+                      Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}"
+                      CornerRadius="5">
+                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                  RecognizesAccessKey="True" />
+              </Border>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <MultiTrigger>
+                <MultiTrigger.Conditions>
+                  <Condition Property="IsKeyboardFocused" Value="True" />
+                  <Condition Property="IsEnabled" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter TargetName="OuterFocusRing" Property="BorderBrush" Value="{StaticResource FocusOuterBrush}" />
+                <Setter TargetName="InnerFocusRing" Property="BorderBrush" Value="{StaticResource FocusInnerBrush}" />
+              </MultiTrigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style.Triggers>
+        <MultiTrigger>
+          <MultiTrigger.Conditions>
+            <Condition Property="IsMouseOver" Value="True" />
+            <Condition Property="IsEnabled" Value="True" />
+          </MultiTrigger.Conditions>
+          <Setter Property="Background" Value="{StaticResource ControlHoverBrush}" />
+        </MultiTrigger>
+        <MultiTrigger>
+          <MultiTrigger.Conditions>
+            <Condition Property="IsPressed" Value="True" />
+            <Condition Property="IsEnabled" Value="True" />
+          </MultiTrigger.Conditions>
+          <Setter Property="Background" Value="{StaticResource ControlPressedBrush}" />
+        </MultiTrigger>
+        <Trigger Property="IsEnabled" Value="False">
+          <Setter Property="Background" Value="Transparent" />
+          <Setter Property="Foreground" Value="{StaticResource DisabledForegroundBrush}" />
+          <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}" />
+          <Setter Property="Cursor" Value="Arrow" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="PrimaryButtonStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+      <Setter Property="Foreground" Value="{StaticResource AccentForegroundBrush}" />
+      <Style.Triggers>
+        <MultiTrigger>
+          <MultiTrigger.Conditions>
+            <Condition Property="IsMouseOver" Value="True" />
+            <Condition Property="IsEnabled" Value="True" />
+          </MultiTrigger.Conditions>
+          <Setter Property="Background" Value="{StaticResource AccentSecondaryBrush}" />
+          <Setter Property="BorderBrush" Value="{StaticResource AccentSecondaryBrush}" />
+        </MultiTrigger>
+        <MultiTrigger>
+          <MultiTrigger.Conditions>
+            <Condition Property="IsPressed" Value="True" />
+            <Condition Property="IsEnabled" Value="True" />
+          </MultiTrigger.Conditions>
+          <Setter Property="Background" Value="{StaticResource AccentTertiaryBrush}" />
+          <Setter Property="BorderBrush" Value="{StaticResource AccentTertiaryBrush}" />
+        </MultiTrigger>
+        <Trigger Property="IsEnabled" Value="False">
+          <Setter Property="Background" Value="{StaticResource ControlBackgroundBrush}" />
+          <Setter Property="Foreground" Value="{StaticResource DisabledForegroundBrush}" />
+          <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}" />
+          <Setter Property="Cursor" Value="Arrow" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+    <Style TargetType="ComboBoxItem">
+      <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBoxItem">
+            <Border x:Name="ItemSurface"
+                    Padding="{TemplateBinding Padding}"
+                    Background="{TemplateBinding Background}"
+                    CornerRadius="4">
+              <ContentPresenter />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="ItemSurface" Property="Background" Value="{StaticResource ControlHoverBrush}" />
+              </Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="ItemSurface" Property="Background" Value="{StaticResource ControlPressedBrush}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
     <Style TargetType="ComboBox">
-      <Setter Property="MinHeight" Value="44" />
-      <Setter Property="Padding" Value="10,6" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="Background" Value="{StaticResource ControlBackgroundBrush}" />
+      <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid>
+              <Border x:Name="PickerFocusOuter"
+                      Margin="-3"
+                      BorderBrush="Transparent"
+                      BorderThickness="1"
+                      CornerRadius="8"
+                      IsHitTestVisible="False" />
+              <Border x:Name="PickerFocusInner"
+                      Margin="-1"
+                      BorderBrush="Transparent"
+                      BorderThickness="1"
+                      CornerRadius="6"
+                      IsHitTestVisible="False" />
+              <ToggleButton x:Name="DropDownToggle"
+                            Focusable="False"
+                            ClickMode="Press"
+                            Background="{TemplateBinding Background}"
+                            Foreground="{TemplateBinding Foreground}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="PickerSurface"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="5">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="30" />
+                        </Grid.ColumnDefinitions>
+                        <ContentPresenter Grid.Column="0"
+                                          Margin="{Binding Padding, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Center"
+                                          Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                          ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}" />
+                        <TextBlock Grid.Column="1"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   FontFamily="Segoe Fluent Icons"
+                                   FontSize="11"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Text="&#xE70D;" />
+                      </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="PickerSurface" Property="Background" Value="{StaticResource ControlHoverBrush}" />
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+              </ToggleButton>
+              <Popup x:Name="PART_Popup"
+                     Placement="Bottom"
+                     AllowsTransparency="True"
+                     Focusable="False"
+                     IsOpen="{TemplateBinding IsDropDownOpen}"
+                     PopupAnimation="Fade">
+                <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                        MaxHeight="300"
+                        Margin="0,2,0,0"
+                        Padding="4"
+                        Background="{StaticResource AppBackgroundBrush}"
+                        BorderBrush="{StaticResource ControlBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="5">
+                  <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto">
+                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter TargetName="PickerFocusOuter" Property="BorderBrush" Value="{StaticResource FocusOuterBrush}" />
+                <Setter TargetName="PickerFocusInner" Property="BorderBrush" Value="{StaticResource FocusInnerBrush}" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="{StaticResource DisabledForegroundBrush}" />
+                <Setter TargetName="DropDownToggle" Property="IsEnabled" Value="False" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="TextBox">
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="Background" Value="{StaticResource ControlBackgroundBrush}" />
+      <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+      <Setter Property="CaretBrush" Value="{StaticResource ForegroundBrush}" />
+      <Setter Property="SelectionBrush" Value="{StaticResource AccentSecondaryBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Grid>
+              <Border x:Name="TextFocusOuter"
+                      Margin="-3"
+                      BorderBrush="Transparent"
+                      BorderThickness="1"
+                      CornerRadius="8"
+                      IsHitTestVisible="False" />
+              <Border x:Name="TextFocusInner"
+                      Margin="-1"
+                      BorderBrush="Transparent"
+                      BorderThickness="1"
+                      CornerRadius="6"
+                      IsHitTestVisible="False" />
+              <Border Padding="{TemplateBinding Padding}"
+                      Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}"
+                      CornerRadius="5">
+                <ScrollViewer x:Name="PART_ContentHost" />
+              </Border>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter TargetName="TextFocusOuter" Property="BorderBrush" Value="{StaticResource FocusOuterBrush}" />
+                <Setter TargetName="TextFocusInner" Property="BorderBrush" Value="{StaticResource FocusInnerBrush}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="Expander">
+      <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Expander">
+            <StackPanel>
+              <ToggleButton x:Name="HeaderSite"
+                            HorizontalContentAlignment="Stretch"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            FocusVisualStyle="{x:Null}"
+                            Foreground="{TemplateBinding Foreground}"
+                            IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Grid>
+                      <Border x:Name="ExpanderFocusOuter"
+                              Margin="-3"
+                              BorderBrush="Transparent"
+                              BorderThickness="1"
+                              CornerRadius="7"
+                              IsHitTestVisible="False" />
+                      <Border x:Name="ExpanderFocusInner"
+                              Margin="-1"
+                              BorderBrush="Transparent"
+                              BorderThickness="1"
+                              CornerRadius="5"
+                              IsHitTestVisible="False" />
+                      <Border x:Name="HeaderSurface" Padding="2" Background="Transparent" CornerRadius="4">
+                        <StackPanel Orientation="Horizontal">
+                          <TextBlock x:Name="HeaderGlyph"
+                                     Width="18"
+                                     VerticalAlignment="Center"
+                                     FontFamily="Segoe Fluent Icons"
+                                     FontSize="11"
+                                     Foreground="{StaticResource MutedBrush}"
+                                     Text="&#xE76C;" />
+                          <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True" />
+                        </StackPanel>
+                      </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="HeaderSurface" Property="Background" Value="{StaticResource ControlHoverBrush}" />
+                      </Trigger>
+                      <Trigger Property="IsChecked" Value="True">
+                        <Setter TargetName="HeaderGlyph" Property="Text" Value="&#xE70D;" />
+                      </Trigger>
+                      <Trigger Property="IsKeyboardFocused" Value="True">
+                        <Setter TargetName="ExpanderFocusOuter" Property="BorderBrush" Value="{StaticResource FocusOuterBrush}" />
+                        <Setter TargetName="ExpanderFocusInner" Property="BorderBrush" Value="{StaticResource FocusInnerBrush}" />
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+                <ContentPresenter Content="{TemplateBinding Header}"
+                                  ContentTemplate="{TemplateBinding HeaderTemplate}" />
+              </ToggleButton>
+              <ContentPresenter x:Name="ExpandSite"
+                                Visibility="Collapsed"
+                                Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}" />
+            </StackPanel>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsExpanded" Value="True">
+                <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="HeaderSite" Property="IsEnabled" Value="False" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ScrollBar">
+      <Setter Property="Width" Value="10" />
+      <Setter Property="Height" Value="Auto" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ScrollBar">
+            <Grid Background="{TemplateBinding Background}">
+              <Track x:Name="PART_Track"
+                     Orientation="{TemplateBinding Orientation}"
+                     Minimum="{TemplateBinding Minimum}"
+                     Maximum="{TemplateBinding Maximum}"
+                     Value="{TemplateBinding Value}"
+                     ViewportSize="{TemplateBinding ViewportSize}"
+                     IsDirectionReversed="True">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton x:Name="DecreasePageButton"
+                                Command="ScrollBar.PageUpCommand"
+                                Opacity="0"
+                                Focusable="False" />
+                </Track.DecreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb>
+                    <Thumb.Template>
+                      <ControlTemplate TargetType="Thumb">
+                        <Border Margin="2"
+                                Background="{StaticResource MutedBrush}"
+                                CornerRadius="3"
+                                Opacity="0.65" />
+                      </ControlTemplate>
+                    </Thumb.Template>
+                  </Thumb>
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton x:Name="IncreasePageButton"
+                                Command="ScrollBar.PageDownCommand"
+                                Opacity="0"
+                                Focusable="False" />
+                </Track.IncreaseRepeatButton>
+              </Track>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="Height" Value="10" />
+                <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                <Setter TargetName="DecreasePageButton" Property="Command" Value="ScrollBar.PageLeftCommand" />
+                <Setter TargetName="IncreasePageButton" Property="Command" Value="ScrollBar.PageRightCommand" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
   </Window.Resources>
 
   <ScrollViewer VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Disabled"
                 PanningMode="VerticalOnly">
-    <Grid Margin="28">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
-
-      <StackPanel Grid.Row="0" Margin="0,0,0,16">
+    <StackPanel Margin="20,18">
+      <StackPanel Margin="0,0,0,16">
         <Border x:Name="PreviewBanner"
                 Visibility="Collapsed"
                 HorizontalAlignment="Left"
-                Margin="0,0,0,12"
-                Padding="10,5"
+                Margin="0,0,0,8"
+                Padding="8,3"
                 CornerRadius="4"
-                Background="#E8F0FC"
-                BorderBrush="#9BBBE9"
+                Background="{StaticResource ControlBackgroundBrush}"
+                BorderBrush="{StaticResource ControlBorderBrush}"
                 BorderThickness="1">
           <TextBlock Text="Preview data. No device changes."
-                     FontSize="12"
-                     FontWeight="Bold"
-                     Foreground="#174A91" />
+                     FontSize="11"
+                     FontWeight="SemiBold"
+                     Foreground="{StaticResource AccentBrush}" />
         </Border>
-        <TextBlock Text="HDMI monitor fix"
-                   FontSize="28"
-                   FontWeight="SemiBold"
-                   LineHeight="34" />
-        <TextBlock Margin="0,8,0,0"
+        <StackPanel Orientation="Horizontal">
+          <Image Width="24"
+                 Height="24"
+                 Margin="0,0,8,0"
+                 Source="/OpenBlade.HdmiFix;component/Assets/Brand/OpenBlade.png"
+                 Stretch="Uniform"
+                 automation:AutomationProperties.Name="OpenBlade" />
+          <TextBlock VerticalAlignment="Center"
+                     Text="HDMI monitor fix"
+                     FontSize="20"
+                     FontWeight="SemiBold" />
+        </StackPanel>
+        <TextBlock Margin="32,3,0,0"
                    Style="{StaticResource MutedTextStyle}"
                    Text="Patch a saved HDMI monitor." />
       </StackPanel>
 
       <Border x:Name="StatusCard"
-              Grid.Row="1"
               Margin="0,0,0,12"
-              Style="{StaticResource CardStyle}"
+              Padding="10,8"
+              CornerRadius="5"
+              Background="{StaticResource ControlBackgroundBrush}"
+              BorderBrush="{StaticResource ControlBorderBrush}"
+              BorderThickness="1"
               automation:AutomationProperties.LiveSetting="Polite"
-              automation:AutomationProperties.Name="Current scan status">
+              automation:AutomationProperties.Name="Current operation status">
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
@@ -100,87 +494,108 @@
           </Grid.ColumnDefinitions>
           <ProgressBar x:Name="BusyIndicator"
                        Grid.Column="0"
-                       Width="32"
-                       Height="6"
-                       Margin="0,7,16,0"
+                       Width="26"
+                       Height="3"
+                       Margin="0,7,10,0"
                        VerticalAlignment="Top"
+                       Foreground="{StaticResource AccentBrush}"
+                       Background="{StaticResource ControlPressedBrush}"
                        IsIndeterminate="True"
                        Visibility="Collapsed"
                        automation:AutomationProperties.Name="OpenBlade is working" />
-          <StackPanel Grid.Column="1">
-            <TextBlock Text="Status" FontWeight="SemiBold" />
-            <TextBlock x:Name="StatusText"
-                       Margin="0,5,0,0"
-                       Style="{StaticResource MutedTextStyle}"
-                       Text="Scanning saved monitors…" />
-          </StackPanel>
+          <TextBlock x:Name="StatusText"
+                     Grid.Column="1"
+                     Foreground="{StaticResource MutedBrush}"
+                     LineHeight="18"
+                     Text="Scanning saved monitors…" />
         </Grid>
       </Border>
 
-      <StackPanel Grid.Row="2" Margin="0,0,0,12">
-        <Label Margin="0,0,0,8"
-               Padding="0"
-               FontWeight="SemiBold"
-               Target="{Binding ElementName=MonitorSelector}">
-          <AccessText Text="_Saved monitor" />
-        </Label>
-        <ComboBox x:Name="MonitorSelector"
-                  SelectionChanged="MonitorSelector_SelectionChanged"
-                  automation:AutomationProperties.Name="Saved monitor"
-                  automation:AutomationProperties.HelpText="Shows monitors connected now and monitors saved from earlier.">
-          <ComboBox.ItemTemplate>
-            <DataTemplate>
-              <TextBlock TextWrapping="Wrap">
-                <TextBlock.ToolTip>
-                  <ToolTip>
-                    <TextBlock>
-                      <Run Text="{Binding Name}" /><Run Text=" · " /><Run Text="{Binding ConnectionLabel}" /><Run Text=" · " /><Run Text="{Binding InstanceLabel}" />
-                    </TextBlock>
-                  </ToolTip>
-                </TextBlock.ToolTip>
-                <Run Text="{Binding Name}" /><LineBreak /><Run Text="{Binding ConnectionLabel}" /><Run Text=" · " /><Run Text="{Binding InstanceLabel}" />
-              </TextBlock>
-            </DataTemplate>
-          </ComboBox.ItemTemplate>
-        </ComboBox>
-        <TextBlock Margin="0,8,0,0"
-                   Style="{StaticResource MutedTextStyle}"
-                   Text="Previously connected monitors remain in this list." />
-      </StackPanel>
-
-      <Border Grid.Row="3" Margin="0,0,0,12" Style="{StaticResource CardStyle}">
+      <Border Margin="0,0,0,12" Style="{StaticResource CardStyle}">
         <StackPanel>
-          <TextBlock x:Name="MonitorNameText"
-                     FontSize="18"
-                     FontWeight="SemiBold"
-                     Text="No monitor selected" />
-          <TextBlock x:Name="MonitorStatusText"
-                     Margin="0,5,0,0"
-                     FontWeight="SemiBold"
-                     Text="Refresh to find saved monitors." />
-          <Grid Margin="0,16,0,0">
+          <Label Margin="0,0,0,5"
+                 Padding="0"
+                 FontWeight="SemiBold"
+                 Foreground="{StaticResource ForegroundBrush}"
+                 Target="{Binding ElementName=MonitorSelector}">
+            <AccessText Text="_Saved monitor" />
+          </Label>
+          <ComboBox x:Name="MonitorSelector"
+                    SelectionChanged="MonitorSelector_SelectionChanged"
+                    automation:AutomationProperties.Name="Saved monitor"
+                    automation:AutomationProperties.HelpText="Shows monitors connected now and monitors saved from earlier.">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock TextWrapping="Wrap" LineHeight="17">
+                  <TextBlock.ToolTip>
+                    <ToolTip Background="{StaticResource AppBackgroundBrush}" Foreground="{StaticResource ForegroundBrush}">
+                      <TextBlock>
+                        <Run Text="{Binding Name}" /><Run Text=" · " /><Run Text="{Binding ConnectionLabel}" /><Run Text=" · " /><Run Text="{Binding InstanceLabel}" />
+                      </TextBlock>
+                    </ToolTip>
+                  </TextBlock.ToolTip>
+                  <Run Text="{Binding Name}" /><LineBreak /><Run Text="{Binding ConnectionLabel}" /><Run Text=" · " /><Run Text="{Binding InstanceLabel}" />
+                </TextBlock>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+
+          <Grid Margin="0,13,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Margin="0,0,12,0">
+              <TextBlock x:Name="MonitorNameText"
+                         Visibility="Collapsed"
+                         FontSize="17"
+                         FontWeight="SemiBold"
+                         Text="No monitor selected" />
+              <TextBlock x:Name="MonitorStatusText"
+                         FontSize="17"
+                         FontWeight="SemiBold"
+                         Foreground="{StaticResource ForegroundBrush}"
+                         Text="Refresh to find saved monitors." />
+            </StackPanel>
+            <Button x:Name="RefreshButton"
+                    Grid.Column="1"
+                    MinHeight="28"
+                    Padding="10,3"
+                    VerticalAlignment="Top"
+                    Click="RefreshButton_Click"
+                    automation:AutomationProperties.Name="Refresh"
+                    automation:AutomationProperties.HelpText="Scan saved monitors again.">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Margin="0,0,6,0" FontFamily="Segoe Fluent Icons" Text="&#xE72C;" />
+                <AccessText Text="Re_fresh" />
+              </StackPanel>
+            </Button>
+          </Grid>
+
+          <Grid Margin="0,12,0,0">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="128" />
+              <ColumnDefinition Width="118" />
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Row="0" Grid.Column="0" Foreground="{StaticResource MutedBrush}" Text="Connection" />
             <TextBlock x:Name="ConnectionText" Grid.Row="0" Grid.Column="1" Text="Unknown" />
-            <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="Saved connection" />
-            <TextBlock x:Name="InstanceLabelText" Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" Text="None" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" Text="Saved connection" />
+            <TextBlock x:Name="InstanceLabelText" Grid.Row="1" Grid.Column="1" Margin="0,5,0,0" Text="None" />
           </Grid>
-          <TextBlock x:Name="MonitorDetailsText" automation:AutomationProperties.LiveSetting="Polite"
-                     Margin="0,16,0,0"
+          <TextBlock x:Name="MonitorDetailsText"
+                     Margin="0,10,0,0"
                      Style="{StaticResource MutedTextStyle}"
+                     automation:AutomationProperties.LiveSetting="Polite"
                      Text="The scan is read-only." />
           <Border x:Name="ValidationWarningBorder"
                   Visibility="Collapsed"
-                  Margin="0,12,0,0"
-                  Padding="12"
-                  CornerRadius="4"
+                  Margin="0,10,0,0"
+                  Padding="10,8"
+                  CornerRadius="5"
                   Background="{StaticResource WarningBackgroundBrush}"
                   BorderBrush="{StaticResource WarningBorderBrush}"
                   BorderThickness="1"
@@ -192,69 +607,121 @@
         </StackPanel>
       </Border>
 
-      <StackPanel Grid.Row="4" Margin="0,0,0,16">
-        <WrapPanel>
-          <Button x:Name="PatchButton"
-                  Margin="0,0,8,8"
-                  Content="_Patch"
-                  Click="PatchButton_Click"
-                  automation:AutomationProperties.HelpText="Patch the selected saved monitor and create a backup." />
-          <Button x:Name="RestoreButton"
-                  Margin="0,0,8,8"
-                  Content="_Restore"
-                  Click="RestoreButton_Click"
-                  automation:AutomationProperties.HelpText="Restore the selected saved monitor from its backup." />
-          <Button x:Name="RefreshButton"
-                  Margin="0,0,0,8"
-                  Content="Re_fresh"
-                  Click="RefreshButton_Click"
-                  automation:AutomationProperties.HelpText="Scan saved monitors again." />
-        </WrapPanel>
-        <TextBlock Style="{StaticResource MutedTextStyle}"
-                   Text="Keep the affected monitor unplugged until you have verified the patch or restore." />
-      </StackPanel>
+      <WrapPanel>
+        <Button x:Name="PatchButton"
+                MinWidth="80"
+                Margin="0,0,8,0"
+                Style="{StaticResource PrimaryButtonStyle}"
+                Click="PatchButton_Click"
+                automation:AutomationProperties.Name="Patch"
+                automation:AutomationProperties.HelpText="Patch the selected saved monitor and create a backup.">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Margin="0,0,6,0" FontFamily="Segoe Fluent Icons" Text="&#xE90F;" />
+            <AccessText Text="_Patch" />
+          </StackPanel>
+        </Button>
+        <Button x:Name="RestoreButton"
+                MinWidth="80"
+                Click="RestoreButton_Click"
+                automation:AutomationProperties.Name="Restore"
+                automation:AutomationProperties.HelpText="Restore the selected saved monitor from its backup.">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Margin="0,0,6,0" FontFamily="Segoe Fluent Icons" Text="&#xE7A7;" />
+            <AccessText Text="_Restore" />
+          </StackPanel>
+        </Button>
+      </WrapPanel>
+      <TextBlock Margin="0,8,0,14"
+                 FontSize="12"
+                 Style="{StaticResource MutedTextStyle}"
+                 Text="Keep the affected monitor unplugged until you have verified the patch or restore." />
 
-      <Border x:Name="RecordingCard" Grid.Row="5" Margin="0,0,0,16" Style="{StaticResource CardStyle}">
+      <Border x:Name="RecordingCard" Margin="0,0,0,14" Style="{StaticResource CardStyle}">
         <StackPanel>
           <TextBlock Text="Record connection" Style="{StaticResource SectionLabelStyle}" />
           <TextBlock Style="{StaticResource MutedTextStyle}"
-                     Text="Select the affected saved connection. Start recording, then plug in the monitor with its existing patch. Recording stops after 60 seconds." />
-          <Expander x:Name="RecordingContextExpander" Header="Monitor and cable details (optional)" Margin="0,12,0,0">
+                     Text="Select the affected connection. Start recording, then connect the patched monitor. Recording stops after 60 seconds." />
+          <Expander x:Name="RecordingContextExpander"
+                    Header="Monitor and cable details (optional)"
+                    Margin="0,9,0,0">
             <StackPanel Margin="0,8,0,0">
-              <TextBlock Style="{StaticResource MutedTextStyle}" Text="These details are included in the ZIP. Omit serial numbers and personal information." />
-              <Label Target="{Binding ElementName=RecordingModelText}" Content="Monitor model" Padding="0" Margin="0,8,0,4" />
-              <TextBox x:Name="RecordingModelText" MaxLength="80" MinHeight="32" Padding="8,5" automation:AutomationProperties.Name="Monitor model" />
-              <Label Target="{Binding ElementName=RecordingFirmwareText}" Content="Monitor firmware" Padding="0" Margin="0,8,0,4" />
-              <TextBox x:Name="RecordingFirmwareText" MaxLength="32" MinHeight="32" Padding="8,5" automation:AutomationProperties.Name="Monitor firmware" />
-              <Label Target="{Binding ElementName=RecordingCableText}" Content="Cable, adapter or dock" Padding="0" Margin="0,8,0,4" />
-              <TextBox x:Name="RecordingCableText" MaxLength="160" MinHeight="32" Padding="8,5" automation:AutomationProperties.Name="Cable, adapter or dock" />
+              <TextBlock FontSize="12"
+                         Style="{StaticResource MutedTextStyle}"
+                         Text="Included in the ZIP. Leave out serial numbers and personal information." />
+              <Label Target="{Binding ElementName=RecordingModelText}" Foreground="{StaticResource ForegroundBrush}" Content="Monitor model" Padding="0" Margin="0,7,0,3" />
+              <TextBox x:Name="RecordingModelText" MaxLength="80" automation:AutomationProperties.Name="Monitor model" />
+              <Label Target="{Binding ElementName=RecordingFirmwareText}" Foreground="{StaticResource ForegroundBrush}" Content="Monitor firmware" Padding="0" Margin="0,7,0,3" />
+              <TextBox x:Name="RecordingFirmwareText" MaxLength="32" automation:AutomationProperties.Name="Monitor firmware" />
+              <Label Target="{Binding ElementName=RecordingCableText}" Foreground="{StaticResource ForegroundBrush}" Content="Cable, adapter or dock" Padding="0" Margin="0,7,0,3" />
+              <TextBox x:Name="RecordingCableText" MaxLength="160" automation:AutomationProperties.Name="Cable, adapter or dock" />
             </StackPanel>
           </Expander>
-          <WrapPanel Margin="0,12,0,0">
-            <Button x:Name="RecordConnectionButton" Content="Record co_nnection" Margin="0,0,8,8"
+          <WrapPanel Margin="0,10,0,0">
+            <Button x:Name="RecordConnectionButton"
+                    Margin="0,0,8,0"
                     Click="RecordConnectionButton_Click"
-                    automation:AutomationProperties.HelpText="Record a read-only connection timeline for 60 seconds." />
-            <Button x:Name="MarkBlackoutButton" Content="Mark _blackout" Margin="0,0,8,8"
-                    Visibility="Collapsed" Click="MarkBlackoutButton_Click"
-                    automation:AutomationProperties.HelpText="Add the current time to the recording when the picture goes black." />
-            <Button x:Name="StopRecordingButton" Content="_Stop and save" Margin="0,0,0,8"
-                    Visibility="Collapsed" Click="StopRecordingButton_Click" />
+                    automation:AutomationProperties.Name="Record connection"
+                    automation:AutomationProperties.HelpText="Record a read-only connection timeline for 60 seconds.">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Margin="0,0,6,0" FontFamily="Segoe Fluent Icons" Text="&#xE7C8;" />
+                <AccessText Text="Record co_nnection" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="MarkBlackoutButton"
+                    Margin="0,0,8,0"
+                    Visibility="Collapsed"
+                    Click="MarkBlackoutButton_Click"
+                    automation:AutomationProperties.Name="Mark blackout"
+                    automation:AutomationProperties.HelpText="Add the current time to the recording when the picture goes black.">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Margin="0,0,6,0" FontFamily="Segoe Fluent Icons" Text="&#xE7F4;" />
+                <AccessText Text="Mark _blackout" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="StopRecordingButton"
+                    Visibility="Collapsed"
+                    Click="StopRecordingButton_Click"
+                    automation:AutomationProperties.Name="Stop and save">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Margin="0,0,6,0" FontFamily="Segoe Fluent Icons" Text="&#xE74E;" />
+                <AccessText Text="_Stop and save" />
+              </StackPanel>
+            </Button>
           </WrapPanel>
-          <ProgressBar x:Name="RecordingProgressBar" Minimum="0" Maximum="60" Height="6"
-                       Visibility="Collapsed" Margin="0,0,0,10"
+          <ProgressBar x:Name="RecordingProgressBar"
+                       Minimum="0"
+                       Maximum="60"
+                       Height="4"
+                       Visibility="Collapsed"
+                       Margin="0,10,0,8"
+                       Foreground="{StaticResource AccentBrush}"
+                       Background="{StaticResource ControlPressedBrush}"
                        automation:AutomationProperties.Name="Connection recording progress" />
-          <TextBlock x:Name="RecordingStatusText" Style="{StaticResource MutedTextStyle}"
+          <TextBlock x:Name="RecordingStatusText"
+                     Margin="0,8,0,0"
+                     FontSize="12"
+                     Style="{StaticResource MutedTextStyle}"
                      automation:AutomationProperties.LiveSetting="Polite"
-                     Text="Recording reads display state and Windows events. It does not change your patch or display settings." />
-          <Button x:Name="OpenRecordingButton" Content="Open recording _folder" Margin="0,12,0,0"
-                  HorizontalAlignment="Left" Visibility="Collapsed" Click="OpenRecordingButton_Click" />
-          <TextBlock Margin="0,10,0,0" Style="{StaticResource MutedTextStyle}" FontSize="12"
-                     Text="Share the diagnostic ZIP. The separate Windows display log can contain private system data; keep it private." />
+                     Text="Recording reads display state and Windows events. It does not change the patch or display settings." />
+          <Button x:Name="OpenRecordingButton"
+                  Margin="0,10,0,0"
+                  HorizontalAlignment="Left"
+                  Visibility="Collapsed"
+                  Click="OpenRecordingButton_Click"
+                  automation:AutomationProperties.Name="Open recording folder">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Margin="0,0,6,0" FontFamily="Segoe Fluent Icons" Text="&#xE8B7;" />
+              <AccessText Text="Open recording _folder" />
+            </StackPanel>
+          </Button>
+          <TextBlock Margin="0,8,0,0"
+                     FontSize="11"
+                     Style="{StaticResource MutedTextStyle}"
+                     Text="Share the diagnostic ZIP. Keep the separate Windows display log private." />
         </StackPanel>
       </Border>
 
       <Expander x:Name="DiagnosticsExpander"
-                Grid.Row="6"
                 Header="Backups and diagnostics"
                 automation:AutomationProperties.Name="Backups and diagnostics">
         <Border Margin="0,8,0,0" Style="{StaticResource CardStyle}">
@@ -262,25 +729,33 @@
             <TextBlock Text="Sanitized diagnostic details" Style="{StaticResource SectionLabelStyle}" />
             <TextBox x:Name="DiagnosticsText"
                      MinHeight="96"
-                     MaxHeight="320"
-                     Padding="10"
+                     MaxHeight="260"
                      IsReadOnly="True"
                      TextWrapping="Wrap"
                      VerticalScrollBarVisibility="Auto"
                      automation:AutomationProperties.Name="Sanitized diagnostic details" />
-            <WrapPanel Margin="0,12,0,0">
+            <WrapPanel Margin="0,10,0,0">
               <Button x:Name="OpenBackupButton"
-                      Margin="0,0,8,8"
-                      Content="_Open backup folder"
-                      Click="OpenBackupButton_Click" />
+                      Margin="0,0,8,0"
+                      Click="OpenBackupButton_Click"
+                      automation:AutomationProperties.Name="Open backup folder">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Margin="0,0,6,0" FontFamily="Segoe Fluent Icons" Text="&#xE8B7;" />
+                  <AccessText Text="_Open backup folder" />
+                </StackPanel>
+              </Button>
               <Button x:Name="CopyDiagnosticsButton"
-                      Margin="0,0,0,8"
-                      Content="_Copy details"
-                      Click="CopyDiagnosticsButton_Click" />
+                      Click="CopyDiagnosticsButton_Click"
+                      automation:AutomationProperties.Name="Copy details">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Margin="0,0,6,0" FontFamily="Segoe Fluent Icons" Text="&#xE8C8;" />
+                  <AccessText Text="_Copy details" />
+                </StackPanel>
+              </Button>
             </WrapPanel>
           </StackPanel>
         </Border>
       </Expander>
-    </Grid>
+    </StackPanel>
   </ScrollViewer>
 </Window>

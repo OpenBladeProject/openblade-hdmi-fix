@@ -59,7 +59,6 @@ public partial class App : Application
         var window = new MainWindow(new PreviewBackend(), previewMode: true)
         {
             Width = previewWidth,
-            Height = 760,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
         };
 

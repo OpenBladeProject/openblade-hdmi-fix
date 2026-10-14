@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -30,7 +31,11 @@ public partial class MainWindow : Window
         SourceInitialized += (_, _) =>
         {
             if (PresentationSource.FromVisual(this) is HwndSource source)
+            {
                 source.AddHook(ObserveDisplayMessages);
+                int darkMode = 1;
+                _ = DwmSetWindowAttribute(source.Handle, 20, ref darkMode, sizeof(int));
+            }
         };
         PreviewBanner.Visibility = previewMode ? Visibility.Visible : Visibility.Collapsed;
         if (previewMode)
@@ -407,6 +412,11 @@ public partial class MainWindow : Window
         bool recording = _recording is not null;
         bool idle = !_isBusy && !recording;
         bool canMutate = idle && !_previewMode && _selectedMonitor is not null;
+        var primary = (Style)FindResource("PrimaryButtonStyle");
+        var secondary = (Style)FindResource(typeof(Button));
+        bool restorePreferred = _selectedMonitor?.CanRestore == true;
+        PatchButton.Style = restorePreferred ? secondary : primary;
+        RestoreButton.Style = restorePreferred ? primary : secondary;
         MonitorSelector.IsEnabled = idle;
         RecordingContextExpander.IsEnabled = idle;
         RecordConnectionButton.IsEnabled = idle && !_previewMode && _selectedMonitor is not null;
@@ -418,6 +428,9 @@ public partial class MainWindow : Window
         OpenBackupButton.IsEnabled = idle && Directory.Exists(_backend.BackupDirectory);
         CopyDiagnosticsButton.IsEnabled = !_isBusy && !string.IsNullOrWhiteSpace(DiagnosticsText.Text);
     }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr window, uint attribute, ref int value, uint size);
 
     private void Window_Closing(object? sender, CancelEventArgs e)
     {

@@ -2,13 +2,24 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Application.Resources>
-    <SolidColorBrush x:Key="AppBackgroundBrush" Color="#F5F6F8" />
-    <SolidColorBrush x:Key="ForegroundBrush" Color="#17212D" />
-    <SolidColorBrush x:Key="MutedBrush" Color="#46566A" />
-    <SolidColorBrush x:Key="BorderBrush" Color="#D7DDE5" />
-    <SolidColorBrush x:Key="WarningBackgroundBrush" Color="#FFF4D6" />
-    <SolidColorBrush x:Key="WarningBorderBrush" Color="#C68B18" />
-    <SolidColorBrush x:Key="WarningForegroundBrush" Color="#604300" />
-    <SolidColorBrush x:Key="AccentBrush" Color="#2767C5" />
+    <SolidColorBrush x:Key="AppBackgroundBrush" Color="#FF202020" />
+    <SolidColorBrush x:Key="CardBackgroundBrush" Color="#0DFFFFFF" />
+    <SolidColorBrush x:Key="ForegroundBrush" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="MutedBrush" Color="#C5FFFFFF" />
+    <SolidColorBrush x:Key="DisabledForegroundBrush" Color="#5DFFFFFF" />
+    <SolidColorBrush x:Key="BorderBrush" Color="#19000000" />
+    <SolidColorBrush x:Key="ControlBorderBrush" Color="#12FFFFFF" />
+    <SolidColorBrush x:Key="ControlBackgroundBrush" Color="#0DFFFFFF" />
+    <SolidColorBrush x:Key="ControlHoverBrush" Color="#0FFFFFFF" />
+    <SolidColorBrush x:Key="ControlPressedBrush" Color="#0AFFFFFF" />
+    <SolidColorBrush x:Key="FocusOuterBrush" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="FocusInnerBrush" Color="#B3000000" />
+    <SolidColorBrush x:Key="WarningBackgroundBrush" Color="#FF433519" />
+    <SolidColorBrush x:Key="WarningBorderBrush" Color="#66FCE100" />
+    <SolidColorBrush x:Key="WarningForegroundBrush" Color="#FFFCE100" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#FF47E10C" />
+    <SolidColorBrush x:Key="AccentSecondaryBrush" Color="#E647E10C" />
+    <SolidColorBrush x:Key="AccentTertiaryBrush" Color="#CC47E10C" />
+    <SolidColorBrush x:Key="AccentForegroundBrush" Color="#FF000000" />
   </Application.Resources>
 </Application>

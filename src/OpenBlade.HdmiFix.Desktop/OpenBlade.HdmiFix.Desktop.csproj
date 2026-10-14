@@ -4,9 +4,12 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/Brand/OpenBlade.ico</ApplicationIcon>
     <AssemblyName>OpenBlade.HdmiFix</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <Resource Include="Assets/Brand/OpenBlade.ico" />
+    <Resource Include="Assets/Brand/OpenBlade.png" />
     <InternalsVisibleTo Include="OpenBlade.HdmiFix.Desktop.Tests" />
     <ProjectReference Include="../OpenBlade.HdmiFix.Core/OpenBlade.HdmiFix.Core.csproj" />
   </ItemGroup>

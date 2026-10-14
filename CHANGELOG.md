@@ -8,6 +8,10 @@
 
 - Record a connection for 60 seconds, mark blackouts, and save a diagnostic ZIP with display changes and relevant Windows event metadata. Stop early or close the app to save partial results. Keep the separate Windows display log private. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
 
+### Changed
+
+- Use a compact dark window with OpenBlade colors and icons, smaller buttons, and visible keyboard focus. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
 ## [0.2.6] - 2026-10-14
 
 ### Fixed
