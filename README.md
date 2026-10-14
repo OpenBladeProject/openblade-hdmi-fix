@@ -27,6 +27,8 @@ Unplug the monitor and open the app under the Windows account that created the b
 
 Backups stay in `%ProgramData%\OpenBlade.HdmiFix.Backups` when you replace the app folder. Keep them until you've finished using the workaround. **Backups and diagnostics** opens the folder or copies a report without raw EDID, serial numbers, device instance IDs, or local paths.
 
+To investigate repeated blanking, select the affected saved connection and choose **Record connection** before plugging it in. Mark each blackout; recording stops after 60 seconds. Open the recording folder and share `connection-recording.zip`. The separate Windows display log may contain private system data.
+
 See [recovery](docs/recovery.md), [technical details](docs/technical.md), and [building](docs/building.md).
 
 ## License

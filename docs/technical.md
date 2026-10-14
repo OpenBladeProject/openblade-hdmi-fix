@@ -31,3 +31,45 @@ Backups use atomic file replacement and a flushed temporary file. The backup dir
 The helper applies the initiating account's explicit read grant when inspecting payloads, even with administrator credentials. Private active records block new patches and produce an account-specific explanation; they do not disable restoration of that account's own backups. Discovery has no record-count cutoff. Only new backups are limited to 512 active records, checked before any registry mutation under the operation mutex. Completed records move into an account-specific `history-` folder with the same three principals as the payload and remain readable by ID. Legacy completed records in the main folder are excluded from the active count.
 
 GPU, driver, monitor firmware, and exact laptop variants belong in physical-validation records. Razer Blade detection is an application scope check, not a claim that every Blade model has been tested.
+
+## Read-only connection diagnostics
+
+Each Refresh captures host information, present display-adapter driver keys through SetupAPI, and active Windows DisplayConfig paths. Live observations are associated only with the full selected monitor instance, not its model code or a neighboring saved connection. Copy details uses that snapshot and does not query or mutate devices again.
+
+HDR comes from Windows' advanced-color-info version 2 query. NVIDIA VRR comes from the installed system NVAPI library, using the DisplayConfig adapter LUID and target ID. Capability, requested state, enabled state and instantaneous VRR activity are separate observations. These fields do not prove which HDMI FRL rate or DSC mode the driver negotiated. A missing library, unsupported query, incomplete topology or ambiguous mapping leaves the affected observation unknown.
+
+Only approved descriptive fields and generated status values appear in the report. Device-interface paths and adapter identities remain private matching data; serials, raw EDID, registry paths and native exception text are omitted. These diagnostic reads do not change Patch or Restore admission.
+
+Unresolved active paths retain bounded error categories and numeric statuses in the report. They leave matching unknown while preserving independent exact matches. Host and live-display capture have separate failure guards so a recoverable optional-reader failure cannot stop saved-monitor discovery or retain stale live observations.
+
+## Recording a connection
+
+Record connection samples the selected full monitor instance and active display topology for 60 seconds, normally every 500 ms. A slower native read can use up to two seconds, within the remaining capture duration; the sampling cadence yields to that read rather than discarding it at 500 ms. It records UTC timestamps and elapsed time, Windows display/device notifications, mode/HDR/NVIDIA VRR observations, query failures and user blackout marks. Optional model, firmware and cable fields are identified as user-provided context. A newly connected matching instance is recognized even when the selection came from a disconnected scan. Connection state is unknown when reads fail or matching is incomplete or ambiguous. Other displays receive recording-local labels; raw instance IDs are not written.
+
+The timeline is saved incrementally in the recording folder under `%LocalAppData%\OpenBlade.HdmiFix\Recordings`. Stop and save or closing the window ends sampling and retains partial results. Patch, Restore, Refresh and monitor selection are unavailable during recording. Recording does not alter EDID, display settings, drivers or device state.
+
+The shareable ZIP contains the baseline report, timeline, summary and bounded Windows event metadata for the capture interval. Event payloads and messages are omitted. Failed or limited queries are reported explicitly. A separate `private/display-log.dat`, collected by the installed Windows `dispdiag.exe`, may contain identifying system data and is excluded from the ZIP. No data is uploaded automatically.
+
+These observations do not measure HDMI FRL negotiation, DSC activity or the physical picture. A display can blank without a Windows topology notification; user marks correlate visible blackouts with recorded observations. Event IDs alone do not identify a particular GPU timeout cause.
+
+## Read-only SCDC observations
+
+Record connection attempts SCDC reads only for the selected, uniquely bound active HDMI instance on an NVIDIA GPU. Ordinary Refresh does not issue SCDC reads. The Windows target/interface path and NVIDIA display mapping are checked around capture; unresolved, cloned, non-HDMI and changed targets return unknown observations.
+
+The reader uses the installed System32 NVAPI library and the public display-ID conversion and I2C-read interfaces. Each transaction reads one byte from the SCDC address at one of three fixed registers: Sink Version (`0x01`), FRL configuration (`0x31`) and status flags (`0x40`). The combined I2C transaction selects the register address, then reads its byte; it sends no configuration value. It never acknowledges update flags, clears counters, changes link rates, starts training or calls I2CWrite.
+
+Timeline observations include the SCDC sink version, configured FRL code/lane count/rate, lane-lock mask and training-ready flag when readable. These are register observations, not proof of active video, stable negotiation or active compression. A zero configured FRL code does not prove TMDS is in use. Active DSC is always unknown because the public API has no corresponding getter.
+
+The register/rate definitions were checked against [NVIDIA's HDMI source](https://github.com/NVIDIA/open-gpu-kernel-modules/blob/main/src/common/sdk/nvidia/inc/ctrl/ctrl0073/ctrl0073specific.h) and [FRL rate definitions](https://github.com/NVIDIA/open-gpu-kernel-modules/blob/main/src/common/inc/nvHdmiFrlCommon.h). Lane locks and training-ready semantics are described in [Altera's HDMI sink interface](https://docs.altera.com/r/docs/683798/26.1.1/hdmi-ip-user-guide/sink-interfaces?contentId=gS~IsdSbu68mvwyCbk9dpg). The transport is documented in [NVAPI I2CRead](https://docs.nvidia.com/nvapi/group__i2capi.html). API availability does not guarantee that a particular driver or monitor exposes SCDC. No successful G95 SCDC read has been validated; failed, unsupported or timed-out reads remain unknown while the other recording evidence is retained.
+
+## Desktop appearance
+
+The window uses OpenBlade's brand icon and Fluent action glyphs. Its dark surfaces follow the compact OpenBlade tray dashboard: a solid `#202020` window with WinUI 2.2.1 dark card, control, text and focus colors, plus OpenBlade's default `#47E10C` accent. This keeps the palette consistent without adding the Tray's Mica compositor dependency. The window title bar also requests Windows' dark appearance.
+
+Brand assets are copied unchanged from OpenBlade core commit `806b0fdceaa2aa8645bcad6213bf73954939e8b2`, under `src/OpenBlade.Tray/Assets/Brand`. The [OpenBlade accent manager](https://github.com/OSSBlade/openblade-core/blob/806b0fdceaa2aa8645bcad6213bf73954939e8b2/src/OpenBlade.Tray/AccentColorManager.cs) defines the green fill and black text on that accent. Platform action glyphs use the same Segoe Fluent Icons family as the Tray; the executable and window use `OpenBlade.ico`.
+
+## Interrupted recording recovery
+
+The recorder persists its baseline and start metadata before reporting that recording has started. Each timeline entry is flushed to storage. An exclusive session lock remains held through recording and finalization; another app instance skips that session. On launch, bounded recovery checks inactive recording folders and creates a separate partial ZIP from valid saved data. It does not issue display or SCDC queries, replay operations, or infer the cause of interruption.
+
+A torn final timeline entry is excluded. The original timeline and any unfinished archive remain in place. Recovery excludes unfamiliar files, private display logs and matching identifiers, and marks missing final evidence as unavailable. It does not fabricate a final sample or shutdown timestamp. A storage device can still lose recent writes during sudden power loss; software flushing cannot guarantee those bytes survived.

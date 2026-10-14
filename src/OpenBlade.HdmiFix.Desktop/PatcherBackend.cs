@@ -11,6 +11,8 @@ public sealed class PatcherBackend : IPatcherBackend
     private readonly Dictionary<string, MonitorState> displayed = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PatchBackup> restorations = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<MonitorView> lastScan = [];
+    private DiagnosticSnapshot diagnosticSnapshot = new(
+        new("unknown", "unknown", "unknown", []), new([], "not captured"), null);
     public string BackupDirectory => backups.DirectoryPath;
 
     public Task<MonitorScan> ScanAsync() => Task.Run(Scan);
@@ -19,6 +21,7 @@ public sealed class PatcherBackend : IPatcherBackend
     {
         displayed.Clear();
         restorations.Clear();
+        diagnosticSnapshot = DiagnosticCapture.Read(HostDiagnosticsReader.Read, LiveDisplayDiagnosticsReader.Read);
         HashSet<string>? present = null;
         var notices = new List<string>();
         try { present = PresentMonitorDevices.Read(); }
@@ -41,6 +44,7 @@ public sealed class PatcherBackend : IPatcherBackend
             notices.Add("The app couldn't verify your backups. Keep the backup folder. Patch and Restore are unavailable.");
         }
         var views = new List<MonitorView>();
+        var incompleteBases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var savedInstances = registry.EnumerateSavedInstances(out var incompleteEnumeration);
         if (incompleteEnumeration)
             notices.Add("Some saved monitor entries couldn't be read. Other saved connections are shown below.");
@@ -106,18 +110,27 @@ public sealed class PatcherBackend : IPatcherBackend
                 if (connected == true && (plan.Disposition == PatchDisposition.Ready || backup is not null))
                     details += " Unplug this monitor to use Patch or Restore.";
                 if (connected is null) details += " The app must check the connection before making changes.";
-                views.Add(new(id, name, connection, instanceLabel, status, details, canPatch, canRestore,
+                var view = new MonitorView(id, name, connection, instanceLabel, status, details, canPatch, canRestore,
                     backup is null ? null : Path.Combine(BackupDirectory, backup.Id + ".json"),
                     plan.Disposition is PatchDisposition.Ready or PatchDisposition.AlreadyCapped || backup is not null
                         ? MonitorWarnings.Unvalidated : string.Empty,
-                    InspectionDetails: inspected.Inspection));
+                    InspectionDetails: inspected.Inspection);
+                if (status == "Unsupported configuration" && !state.Overrides.KeyExists
+                    && StaleInternalPanel.IsActiveInternal(id, present, diagnosticSnapshot.Live))
+                    view = StaleInternalPanel.DescribeConnected(view);
+                views.Add(view);
             }
             catch (Exception e) when (IsExpected(e))
             {
                 views.Add(UnavailableMonitor(id, connection, instanceLabel, e));
+                if (e is SavedMonitorReadException { Reason: SavedMonitorReadFailure.EdidIncomplete, BaseFingerprint: { } fingerprint })
+                    incompleteBases[id] = fingerprint;
             }
         }
         if (views.Count == 0) notices.Add("Windows has no saved monitors. Keep the crashing monitor unplugged. The app needs its previously saved capability data to patch it.");
+        views = views.Select(view => incompleteBases.TryGetValue(view.InstanceId, out var fingerprint)
+            && StaleInternalPanel.Matches(view.InstanceId, fingerprint, present, diagnosticSnapshot.Live, displayed)
+                ? StaleInternalPanel.Describe(view) : view).ToList();
         lastScan = views.OrderByDescending(v => v.CanPatch || v.CanRestore)
             .ThenBy(v => v.DisplayLabel, StringComparer.OrdinalIgnoreCase).ToArray();
         return new(lastScan, string.Join(" ", notices));
@@ -185,7 +198,8 @@ public sealed class PatcherBackend : IPatcherBackend
             InspectionDetails: error is SavedMonitorReadException known ? known.Inspection : "");
     }
 
-    public string DiagnosticText(MonitorView? monitor) => FormatRelatedDiagnostics(monitor, lastScan);
+    public string DiagnosticText(MonitorView? monitor) => DiagnosticReport.Format(monitor, lastScan,
+        diagnosticSnapshot.Host, diagnosticSnapshot.Live, diagnosticSnapshot.Captured);
 
     internal static string FormatRelatedDiagnostics(MonitorView? selected, IReadOnlyList<MonitorView> monitors)
     {
@@ -205,6 +219,7 @@ public sealed class PatcherBackend : IPatcherBackend
         return $"OpenBlade HDMI Fix {version}\nMonitor ID: {monitor.InstanceId.Split('\\')[1]}\n"
             + $"Connection: {monitor.ConnectionLabel}\nSaved connection: {monitor.InstanceLabel}\nState: {monitor.Status}\n"
             + $"Patch available: {monitor.CanPatch}\nRestore available: {monitor.CanRestore}\n"
+            + (monitor.IsStaleInternalPanel || monitor.IsInternalPanel ? monitor.Details + "\n" : "")
             + (monitor.ReadFailure is { } reason
                 ? $"Read failure: {reason}\nReason: {SavedMonitorReadErrors.Describe(reason)}\n" : "")
             + (string.IsNullOrEmpty(monitor.ValidationWarning) ? "" : $"Validation: {monitor.ValidationWarning}\n")

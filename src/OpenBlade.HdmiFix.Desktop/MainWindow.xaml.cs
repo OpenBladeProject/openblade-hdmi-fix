@@ -1,8 +1,10 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 
 namespace OpenBlade.HdmiFix.Desktop;
 
@@ -10,16 +12,39 @@ public partial class MainWindow : Window
 {
     private readonly IPatcherBackend _backend;
     private readonly bool _previewMode;
+    private readonly string _recordingRoot;
     private readonly TaskCompletionSource _initialScanCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _isBusy;
     private MonitorView? _selectedMonitor;
+    private ConnectionRecording? _recording;
+    private CancellationTokenSource? _recordingCancellation;
+    private string? _lastRecordingDirectory;
+    private bool _closeAfterRecording;
+    private bool _finishingRecording;
+    private bool _recordingReady;
 
     public MainWindow(IPatcherBackend backend, bool previewMode = false)
+        : this(backend, previewMode, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "OpenBlade.HdmiFix", "Recordings"))
+    {
+    }
+
+    internal MainWindow(IPatcherBackend backend, bool previewMode, string recordingRoot)
     {
         ArgumentNullException.ThrowIfNull(backend);
+        _recordingRoot = recordingRoot;
         _backend = backend;
         _previewMode = previewMode;
         InitializeComponent();
+        SourceInitialized += (_, _) =>
+        {
+            if (PresentationSource.FromVisual(this) is HwndSource source)
+            {
+                source.AddHook(ObserveDisplayMessages);
+                int darkMode = 1;
+                _ = DwmSetWindowAttribute(source.Handle, 20, ref darkMode, sizeof(int));
+            }
+        };
         PreviewBanner.Visibility = previewMode ? Visibility.Visible : Visibility.Collapsed;
         if (previewMode)
         {
@@ -31,6 +56,19 @@ public partial class MainWindow : Window
     }
 
     public Task InitialScanCompleted => _initialScanCompletion.Task;
+
+    internal void PrepareRecordingPreview()
+    {
+        if (!_previewMode) return;
+        RecordConnectionButton.Visibility = Visibility.Collapsed;
+        MarkBlackoutButton.Visibility = Visibility.Visible;
+        StopRecordingButton.Visibility = Visibility.Visible;
+        RecordingProgressBar.Visibility = Visibility.Visible;
+        RecordingProgressBar.Value = 23;
+        RecordingStatusText.Text = "Recording: 37 seconds left · 46 samples · 2 blackout marks.";
+        UpdateLayout();
+        RecordingCard.BringIntoView();
+    }
 
     internal void PrepareExpandedDiagnosticsPreview()
     {
@@ -48,7 +86,8 @@ public partial class MainWindow : Window
     {
         try
         {
-            await RefreshAsync();
+            string? recovered = await RecoverRecordingsAsync();
+            await RefreshAsync(completionMessage: recovered);
         }
         finally
         {
@@ -56,9 +95,34 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task<string?> RecoverRecordingsAsync()
+    {
+        if (_previewMode) return null;
+        SetBusy(true, "Checking saved recordings…");
+        try
+        {
+            var recovery = await Task.Run(() => RecordingRecovery.Recover(_recordingRoot));
+            if (Directory.Exists(_recordingRoot))
+            {
+                _lastRecordingDirectory = recovery.Recordings.Count == 1 && recovery.UnavailableCount == 0 && !recovery.ScanLimitReached
+                    ? recovery.Recordings[0].DirectoryPath : _recordingRoot;
+                OpenRecordingButton.Visibility = Visibility.Visible;
+            }
+            if (!string.IsNullOrWhiteSpace(recovery.Message))
+                RecordingStatusText.Text = recovery.Message;
+            return recovery.Message;
+        }
+        catch (Exception error) when (PatcherBackend.IsExpected(error))
+        {
+            RecordingStatusText.Text = "Saved recordings could not be checked. Your files remain in the recording folder.";
+            return RecordingStatusText.Text;
+        }
+        finally { SetBusy(false); }
+    }
+
     private async Task RefreshAsync(string? preferredInstanceId = null, string? completionMessage = null)
     {
-        if (_isBusy)
+        if (_isBusy || _recording is not null)
         {
             return;
         }
@@ -121,7 +185,7 @@ public partial class MainWindow : Window
     private async Task ApplyAsync(bool restore)
     {
         MonitorView? monitor = _selectedMonitor;
-        if (_isBusy || monitor is null || _previewMode)
+        if (_isBusy || _recording is not null || monitor is null || _previewMode)
         {
             return;
         }
@@ -190,6 +254,136 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void RecordConnectionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isBusy || _recording is not null || _selectedMonitor is null || _previewMode) return;
+        MonitorView selected = _selectedMonitor;
+        ConnectionRecording recording;
+        try
+        {
+            string context = FormatRecordingContext(RecordingModelText.Text, RecordingFirmwareText.Text, RecordingCableText.Text);
+            recording = new ConnectionRecording(selected, _backend.DiagnosticText(selected) + context, _recordingRoot);
+        }
+        catch (Exception ex) when (ex is not (OutOfMemoryException or StackOverflowException or AccessViolationException))
+        {
+            RecordingStatusText.Text = "The recording could not start. Try Refresh, then record again.";
+            return;
+        }
+        using var cancellation = new CancellationTokenSource();
+        _recording = recording;
+        _recordingCancellation = cancellation;
+        _finishingRecording = false;
+        _recordingReady = false;
+        _lastRecordingDirectory = null;
+        RecordingProgressBar.Value = 0;
+        RecordingProgressBar.Visibility = Visibility.Visible;
+        MarkBlackoutButton.Visibility = Visibility.Visible;
+        StopRecordingButton.Visibility = Visibility.Visible;
+        OpenRecordingButton.Visibility = Visibility.Collapsed;
+        RecordingStatusText.Text = "Preparing the recording. Keep the monitor unplugged until recording starts.";
+        UpdateActionStates();
+        RecordConnectionButton.Visibility = Visibility.Collapsed;
+        RecordingCard.BringIntoView();
+        MarkBlackoutButton.Focus();
+        var progress = new Progress<RecordingProgress>(value =>
+        {
+            if (!ReferenceEquals(_recording, recording) || _finishingRecording) return;
+            _recordingReady = true;
+            if (value.IsFinalizing)
+            {
+                _finishingRecording = true;
+                RecordingStatusText.Text = "Saving the recording and collecting Windows logs…";
+                MarkBlackoutButton.IsEnabled = false;
+                StopRecordingButton.IsEnabled = false;
+                return;
+            }
+            MarkBlackoutButton.IsEnabled = true;
+            RecordingProgressBar.Value = Math.Min(60, value.Elapsed.TotalSeconds);
+            int remaining = Math.Max(0, 60 - (int)value.Elapsed.TotalSeconds);
+            RecordingStatusText.Text = remaining > 0
+                ? $"Recording: {remaining} seconds left · {value.Samples} samples · {value.Blackouts} blackout marks."
+                : "Saving the recording and collecting Windows logs…";
+        });
+        try
+        {
+            ConnectionRecordingResult result = await Task.Run(() => recording.RunAsync(cancellation.Token, progress));
+            _lastRecordingDirectory = result.DirectoryPath;
+            RecordingStatusText.Text = result.Message;
+            OpenRecordingButton.Visibility = Directory.Exists(_lastRecordingDirectory) ? Visibility.Visible : Visibility.Collapsed;
+        }
+        catch (Exception ex) when (ex is not (OutOfMemoryException or StackOverflowException or AccessViolationException))
+        {
+            _lastRecordingDirectory = recording.DirectoryPath;
+            OpenRecordingButton.Visibility = Directory.Exists(_lastRecordingDirectory) ? Visibility.Visible : Visibility.Collapsed;
+            RecordingStatusText.Text = "The recording could not finish. Any saved partial files remain in the recording folder.";
+        }
+        finally
+        {
+            _recording = null;
+            _recordingCancellation = null;
+            _finishingRecording = false;
+            RecordConnectionButton.Visibility = Visibility.Visible;
+            MarkBlackoutButton.Visibility = Visibility.Collapsed;
+            StopRecordingButton.Visibility = Visibility.Collapsed;
+            RecordingProgressBar.Visibility = Visibility.Collapsed;
+            UpdateActionStates();
+            if (_closeAfterRecording) Close();
+        }
+    }
+
+    private void MarkBlackoutButton_Click(object sender, RoutedEventArgs e)
+    {
+        RecordingStatusText.Text = _recording?.MarkBlackout() == true
+            ? "Blackout marked. Recording continues."
+            : "The blackout mark was not saved. Recording has stopped or the mark limit was reached.";
+    }
+
+    private void StopRecordingButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_recordingCancellation is null) return;
+        _finishingRecording = true;
+        _recordingCancellation.Cancel();
+        MarkBlackoutButton.IsEnabled = false;
+        StopRecordingButton.IsEnabled = false;
+        RecordingStatusText.Text = "Stopping and saving the recording…";
+    }
+
+    private void OpenRecordingButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lastRecordingDirectory is null) return;
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = _lastRecordingDirectory, UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is not (OutOfMemoryException or StackOverflowException or AccessViolationException))
+        {
+            RecordingStatusText.Text = "The recording folder could not be opened. Recordings are saved in Local AppData, under OpenBlade.HdmiFix\\Recordings.";
+        }
+    }
+
+    internal static string FormatRecordingContext(string model, string firmware, string cable)
+    {
+        static string Value(string value, int limit)
+        {
+            string clean = new(value.Where(c => !char.IsControl(c)
+                && char.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.Format).ToArray());
+            clean = clean.Trim();
+            return clean.Length == 0 ? "not provided" : clean[..Math.Min(clean.Length, limit)];
+        }
+        return "\n\nUser-provided context (not detected):\nMonitor model: " + Value(model, 80)
+            + "\nMonitor firmware: " + Value(firmware, 32)
+            + "\nCable, adapter or dock: " + Value(cable, 160);
+    }
+
+    private IntPtr ObserveDisplayMessages(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (_recording is null) return IntPtr.Zero;
+        if (message == 0x007E) _recording.NotifyDisplayChange();
+        else if (message == 0x0219 && wParam.ToInt64() is 0x0007 or 0x8000 or 0x8004)
+            _recording.NotifyDeviceChange();
+        return IntPtr.Zero;
+    }
+
     private void ShowMonitor(MonitorView? monitor)
     {
         _selectedMonitor = monitor;
@@ -211,6 +405,7 @@ public partial class MainWindow : Window
             MonitorDetailsText.Text = monitor.Details;
         }
 
+        ActionHintText.Text = monitor?.ActionHint ?? string.Empty;
         ValidationWarningText.Text = monitor?.ValidationWarning ?? string.Empty;
         ValidationWarningBorder.Visibility = string.IsNullOrWhiteSpace(ValidationWarningText.Text)
             ? Visibility.Collapsed : Visibility.Visible;
@@ -247,21 +442,39 @@ public partial class MainWindow : Window
 
     private void UpdateActionStates()
     {
-        bool canMutate = !_isBusy && !_previewMode && _selectedMonitor is not null;
+        bool recording = _recording is not null;
+        bool idle = !_isBusy && !recording;
+        bool canMutate = idle && !_previewMode && _selectedMonitor is not null;
+        var primary = (Style)FindResource("PrimaryButtonStyle");
+        var secondary = (Style)FindResource(typeof(Button));
+        bool restorePreferred = _selectedMonitor?.CanRestore == true;
+        PatchButton.Style = restorePreferred ? secondary : primary;
+        RestoreButton.Style = restorePreferred ? primary : secondary;
+        MonitorSelector.IsEnabled = idle;
+        RecordingContextExpander.IsEnabled = idle;
+        RecordConnectionButton.IsEnabled = idle && !_previewMode && _selectedMonitor is not null;
+        MarkBlackoutButton.IsEnabled = recording && _recordingReady && !_finishingRecording;
+        StopRecordingButton.IsEnabled = recording && !_finishingRecording;
         PatchButton.IsEnabled = canMutate && _selectedMonitor!.CanPatch;
         RestoreButton.IsEnabled = canMutate && _selectedMonitor!.CanRestore;
-        RefreshButton.IsEnabled = !_isBusy;
-        OpenBackupButton.IsEnabled = !_isBusy && Directory.Exists(_backend.BackupDirectory);
+        RefreshButton.IsEnabled = idle;
+        OpenBackupButton.IsEnabled = idle && Directory.Exists(_backend.BackupDirectory);
         CopyDiagnosticsButton.IsEnabled = !_isBusy && !string.IsNullOrWhiteSpace(DiagnosticsText.Text);
     }
 
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr window, uint attribute, ref int value, uint size);
+
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
-        if (!_isBusy)
+        if (_recording is not null)
         {
+            e.Cancel = true;
+            _closeAfterRecording = true;
+            StopRecordingButton_Click(this, new RoutedEventArgs());
             return;
         }
-
+        if (!_isBusy) return;
         e.Cancel = true;
         SetStatus("OpenBlade is still working. Wait for it to finish before closing the app.");
     }

@@ -45,6 +45,7 @@ internal sealed class MonitorRegistry : IMonitorOverrideStore
     internal (MonitorState State, string Inspection) ReadInspected(string instanceId)
     {
         string inspection = "";
+        string? baseFingerprint = null;
         try
         {
             try { MonitorInstance.Validate(instanceId); }
@@ -57,12 +58,14 @@ internal sealed class MonitorRegistry : IMonitorOverrideStore
             // Read override status independently, before EDID admission can fail.
             var overrideRead = ReadOverrides(key);
             inspection += "\n" + overrideRead.Report;
+            if (overrideRead.State is { KeyExists: false } && value is byte[] bytes)
+                baseFingerprint = StaleInternalPanel.BaseFingerprint(instanceId, bytes);
             var edid = ValidateSavedEdid(instanceId, value);
             if (overrideRead.Failure is { } overrideFailure)
                 throw new SavedMonitorReadException(overrideFailure);
             return (new(instanceId, edid, overrideRead.State!), inspection);
         }
-        catch (SavedMonitorReadException e) { throw new SavedMonitorReadException(e.Reason, inspection); }
+        catch (SavedMonitorReadException e) { throw new SavedMonitorReadException(e.Reason, inspection, baseFingerprint); }
         catch (Exception e) when (PatcherBackend.IsExpected(e))
         {
             throw new SavedMonitorReadException(SavedMonitorReadErrors.Classify(e), inspection);

@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## [0.3.1] - 2026-10-14
+
+### Fixed
+
+- Identify the connected built-in screen in plain language. Recover interrupted connection recordings on the next launch and offer a partial diagnostic ZIP. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
+- Explain stale built-in panel entries without asking users to unplug the internal screen. Keep Patch and Restore unavailable for those entries. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
+## [0.3.0] - 2026-10-14
+
+### Added
+
+- Include read-only SCDC FRL configuration, lane-lock and training-ready flags for the selected HDMI connection in recordings. Keep active DSC unknown and preserve the recording when telemetry is unavailable. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
+- Record a connection for 60 seconds, mark blackouts, and save a diagnostic ZIP with display changes and relevant Windows event metadata. Stop early or close the app to save partial results. Keep the separate Windows display log private. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
+### Changed
+
+- Use a compact dark window with OpenBlade colors and icons, smaller buttons, and visible keyboard focus. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
+## [0.2.6] - 2026-10-14
+
+### Fixed
+
+- Include laptop, Windows, GPU-driver and saved monitor information in Copy details. Capture mode, HDR and NVIDIA VRR state for the exact active connection, with unavailable states for disconnected entries and failed queries. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
+- Preserve failed active-display matching in copied diagnostics, identify DisplayPort USB tunnels, and keep optional diagnostic failures from blocking saved-monitor inspection. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
 ## [0.2.5] - 2026-10-13
 
 ### Fixed
@@ -54,3 +82,7 @@
 [0.2.4]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.3...v0.2.4
 
 [0.2.5]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.4...v0.2.5
+
+[0.2.6]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.5...v0.2.6
+
+[0.3.0]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.6...v0.3.0

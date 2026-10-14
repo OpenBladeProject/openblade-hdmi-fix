@@ -25,6 +25,7 @@ public partial class App : Application
             out string? outputPath,
             out double previewWidth,
             out bool expandedPreview,
+            out bool recordingPreview,
             out string? previewError))
         {
             if (previewError is not null)
@@ -34,7 +35,7 @@ public partial class App : Application
                 return;
             }
 
-            RunPreview(outputPath!, previewWidth, expandedPreview);
+            RunPreview(outputPath!, previewWidth, expandedPreview, recordingPreview);
             return;
         }
 
@@ -53,12 +54,11 @@ public partial class App : Application
         MainWindow.Show();
     }
 
-    private void RunPreview(string outputPath, double previewWidth, bool expandedPreview)
+    private void RunPreview(string outputPath, double previewWidth, bool expandedPreview, bool recordingPreview)
     {
         var window = new MainWindow(new PreviewBackend(), previewMode: true)
         {
             Width = previewWidth,
-            Height = 760,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
         };
 
@@ -68,6 +68,7 @@ public partial class App : Application
             try
             {
                 await window.InitialScanCompleted;
+                if (recordingPreview) window.PrepareRecordingPreview();
                 if (expandedPreview)
                 {
                     window.PrepareExpandedDiagnosticsPreview();
@@ -116,11 +117,13 @@ public partial class App : Application
         out string? outputPath,
         out double previewWidth,
         out bool expandedPreview,
+        out bool recordingPreview,
         out string? error)
     {
         outputPath = null;
         previewWidth = 720;
         expandedPreview = false;
+        recordingPreview = false;
         error = null;
 
         if (args.Length == 0 || !string.Equals(args[0], "--preview", StringComparison.OrdinalIgnoreCase))
@@ -128,9 +131,9 @@ public partial class App : Application
             return false;
         }
 
-        if (args.Length is < 2 or > 4 || !Path.IsPathFullyQualified(args[1]))
+        if (args.Length is < 2 or > 5 || !Path.IsPathFullyQualified(args[1]))
         {
-            error = "Preview usage: --preview <absolute output.png> [width] [--expanded]";
+            error = "Preview usage: --preview <absolute output.png> [width] [--expanded] [--recording]";
             return true;
         }
 
@@ -142,7 +145,7 @@ public partial class App : Application
 
         int nextArgument = 2;
         if (nextArgument < args.Length &&
-            !string.Equals(args[nextArgument], "--expanded", StringComparison.OrdinalIgnoreCase))
+            !args[nextArgument].StartsWith("--", StringComparison.Ordinal))
         {
             if (!double.TryParse(args[nextArgument], System.Globalization.NumberStyles.Float,
                     System.Globalization.CultureInfo.InvariantCulture, out previewWidth) ||
@@ -155,17 +158,17 @@ public partial class App : Application
             nextArgument++;
         }
 
-        if (nextArgument < args.Length &&
-            string.Equals(args[nextArgument], "--expanded", StringComparison.OrdinalIgnoreCase))
+        for (; nextArgument < args.Length; nextArgument++)
         {
-            expandedPreview = true;
-            nextArgument++;
-        }
-
-        if (nextArgument != args.Length)
-        {
-            error = "Preview usage: --preview <absolute output.png> [width] [--expanded]";
-            return true;
+            if (string.Equals(args[nextArgument], "--expanded", StringComparison.OrdinalIgnoreCase) && !expandedPreview)
+                expandedPreview = true;
+            else if (string.Equals(args[nextArgument], "--recording", StringComparison.OrdinalIgnoreCase) && !recordingPreview)
+                recordingPreview = true;
+            else
+            {
+                error = "Preview usage: --preview <absolute output.png> [width] [--expanded] [--recording]";
+                return true;
+            }
         }
 
         outputPath = Path.GetFullPath(args[1]);

@@ -16,11 +16,13 @@ public enum SavedMonitorReadFailure
     ReadFailed,
 }
 
-internal sealed class SavedMonitorReadException(SavedMonitorReadFailure reason, string inspection = "")
+internal sealed class SavedMonitorReadException(SavedMonitorReadFailure reason, string inspection = "", string? baseFingerprint = null)
     : IOException(SavedMonitorReadErrors.Describe(reason))
 {
     internal SavedMonitorReadFailure Reason { get; } = reason;
     internal string Inspection { get; } = inspection;
+    // Private scan evidence only; never included in diagnostics or patch admission.
+    internal string? BaseFingerprint { get; } = baseFingerprint;
 }
 
 internal static class SavedMonitorReadErrors

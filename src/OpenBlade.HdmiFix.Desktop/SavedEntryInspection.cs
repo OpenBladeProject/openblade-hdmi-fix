@@ -10,6 +10,7 @@ internal static class SavedEntryInspection
         string report = "EDID registry type: " + (kind?.ToString() ?? "missing");
         if (value is not byte[] edid)
             return report + "\nEDID inspection: " + (value is null ? "no saved data" : "value is not binary data");
+        report += "\nSaved EDID monitor name: " + DiagnosticValues.Text(EdidPatchPlanner.MonitorName(edid), 13);
         report += "\n" + EdidPatchPlanner.InspectionText(edid);
         var model = EdidPatchPlanner.MonitorModelId(edid);
         report += "\nSaved connection identity: " + (model.Length == 0 ? "not validated"
