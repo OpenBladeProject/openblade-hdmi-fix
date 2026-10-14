@@ -631,7 +631,7 @@
           </StackPanel>
         </Button>
       </WrapPanel>
-      <TextBlock Margin="0,8,0,14"
+      <TextBlock x:Name="ActionHintText" Margin="0,8,0,14"
                  FontSize="12"
                  Style="{StaticResource MutedTextStyle}"
                  Text="Keep the affected monitor unplugged until you have verified the patch or restore." />

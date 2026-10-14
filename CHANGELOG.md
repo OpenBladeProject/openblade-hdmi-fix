@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Explain stale built-in panel entries without asking users to unplug the internal screen. Keep Patch and Restore unavailable for those entries. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
 ## [0.3.0] - 2026-10-14
 
 ### Added

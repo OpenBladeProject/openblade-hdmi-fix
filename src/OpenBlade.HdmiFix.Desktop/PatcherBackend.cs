@@ -44,6 +44,7 @@ public sealed class PatcherBackend : IPatcherBackend
             notices.Add("The app couldn't verify your backups. Keep the backup folder. Patch and Restore are unavailable.");
         }
         var views = new List<MonitorView>();
+        var incompleteBases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var savedInstances = registry.EnumerateSavedInstances(out var incompleteEnumeration);
         if (incompleteEnumeration)
             notices.Add("Some saved monitor entries couldn't be read. Other saved connections are shown below.");
@@ -118,9 +119,14 @@ public sealed class PatcherBackend : IPatcherBackend
             catch (Exception e) when (IsExpected(e))
             {
                 views.Add(UnavailableMonitor(id, connection, instanceLabel, e));
+                if (e is SavedMonitorReadException { Reason: SavedMonitorReadFailure.EdidIncomplete, BaseFingerprint: { } fingerprint })
+                    incompleteBases[id] = fingerprint;
             }
         }
         if (views.Count == 0) notices.Add("Windows has no saved monitors. Keep the crashing monitor unplugged. The app needs its previously saved capability data to patch it.");
+        views = views.Select(view => incompleteBases.TryGetValue(view.InstanceId, out var fingerprint)
+            && StaleInternalPanel.Matches(view.InstanceId, fingerprint, present, diagnosticSnapshot.Live, displayed)
+                ? StaleInternalPanel.Describe(view) : view).ToList();
         lastScan = views.OrderByDescending(v => v.CanPatch || v.CanRestore)
             .ThenBy(v => v.DisplayLabel, StringComparer.OrdinalIgnoreCase).ToArray();
         return new(lastScan, string.Join(" ", notices));
@@ -209,6 +215,7 @@ public sealed class PatcherBackend : IPatcherBackend
         return $"OpenBlade HDMI Fix {version}\nMonitor ID: {monitor.InstanceId.Split('\\')[1]}\n"
             + $"Connection: {monitor.ConnectionLabel}\nSaved connection: {monitor.InstanceLabel}\nState: {monitor.Status}\n"
             + $"Patch available: {monitor.CanPatch}\nRestore available: {monitor.CanRestore}\n"
+            + (monitor.IsStaleInternalPanel ? monitor.Details + "\n" : "")
             + (monitor.ReadFailure is { } reason
                 ? $"Read failure: {reason}\nReason: {SavedMonitorReadErrors.Describe(reason)}\n" : "")
             + (string.IsNullOrEmpty(monitor.ValidationWarning) ? "" : $"Validation: {monitor.ValidationWarning}\n")

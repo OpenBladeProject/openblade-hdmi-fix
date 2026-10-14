@@ -373,6 +373,7 @@ public partial class MainWindow : Window
             MonitorDetailsText.Text = monitor.Details;
         }
 
+        ActionHintText.Text = monitor?.ActionHint ?? string.Empty;
         ValidationWarningText.Text = monitor?.ValidationWarning ?? string.Empty;
         ValidationWarningBorder.Visibility = string.IsNullOrWhiteSpace(ValidationWarningText.Text)
             ? Visibility.Collapsed : Visibility.Visible;
