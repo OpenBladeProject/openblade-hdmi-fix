@@ -212,6 +212,78 @@ public sealed class LiveDisplayDiagnosticsTests
         Assert.Equal(expected, Assert.Single(scan.Displays).Connection);
     }
 
+
+    [Fact]
+    public void ScdcIsRequestedOnlyForTheSelectedInstanceDuringRecording()
+    {
+        const string selectedId = @"DISPLAY\SAM1111\selected";
+        var selected = Candidate("selected-path", selectedId, 1, "Selected");
+        var other = Candidate("other-path", @"DISPLAY\SAM1111\other", 2, "Same model");
+        int reads = 0;
+        ScdcObservation Read(LiveDisplayDiagnosticsReader.DisplayCandidate candidate)
+        {
+            Assert.Equal(selectedId, candidate.InstanceId);
+            reads++;
+            return new(1, 4, 4, 8, 15, true, "Scdc:Available");
+        }
+        var refresh = LiveDisplayDiagnosticsReader.BuildScan([selected, other],
+            _ => new("active", ""), _ => new("Yes", "No", "Yes", "No", ""), readScdc: Read);
+        Assert.Equal(0, reads);
+        Assert.All(refresh.Displays, d => Assert.Equal("Scdc:NotRequested", d.Scdc!.Status));
+        var recording = LiveDisplayDiagnosticsReader.BuildScan([selected, other],
+            _ => new("active", ""), _ => new("Yes", "No", "Yes", "No", ""),
+            recordingInstanceId: selectedId.ToLowerInvariant(), readScdc: Read);
+        Assert.Equal(1, reads);
+        Assert.Equal(8, recording.Displays[0].Scdc!.GbpsPerLane);
+        Assert.Null(recording.Displays[1].Scdc!.FrlRateCode);
+        Assert.Equal("Scdc:NotRequested", recording.Displays[1].Scdc!.Status);
+    }
+
+    [Theory]
+    [InlineData(10, "", "Scdc:NotHdmi")]
+    [InlineData(5, "BindingOpen:13", "Scdc:BindingUnavailable")]
+    public void ScdcSkipsNonHdmiAndInvalidBinding(int technology, string error, string expected)
+    {
+        var candidate = Candidate("path", "selected", 1, "Monitor") with
+            { OutputTechnology = technology, Error = error };
+        int calls = 0;
+        var scan = LiveDisplayDiagnosticsReader.BuildScan([candidate],
+            _ => new("active", ""), _ => new("Yes", "No", "Yes", "No", ""),
+            recordingInstanceId: "selected", readScdc: _ => { calls++; throw new Exception(); });
+        Assert.Equal(0, calls);
+        Assert.Equal(expected, Assert.Single(scan.Displays).Scdc!.Status);
+    }
+
+    [Fact]
+    public void ScdcSkipsAmbiguousAndUnresolvedTargets()
+    {
+        var first = Candidate("path1", "selected", 1, "Monitor");
+        var second = Candidate("path2", "selected", 2, "Monitor");
+        var unresolved = Candidate("path3", "", 3, "Monitor") with { Error = "BindingOpen:13" };
+        int calls = 0;
+        var scan = LiveDisplayDiagnosticsReader.BuildScan([first, second, unresolved],
+            _ => new("active", ""), _ => new("Yes", "No", "Yes", "No", ""),
+            recordingInstanceId: "selected", readScdc: _ => { calls++; throw new Exception(); });
+        Assert.Equal(0, calls);
+        Assert.Equal("Scdc:Ambiguous", scan.Displays.Single(d => d.InstanceId == "selected").Scdc!.Status);
+        Assert.Null(scan.Displays.Single(d => d.InstanceId == "").Scdc!.LaneLockMask);
+    }
+
+    [Fact]
+    public void ScdcReadFailurePreservesIndependentModeHdrAndVrr()
+    {
+        var scan = LiveDisplayDiagnosticsReader.BuildScan([Candidate("path", "selected", 1, "Monitor")],
+            _ => new("active", ""), _ => new("Yes", "No", "Yes", "No", ""),
+            recordingInstanceId: "selected", readScdc: _ => throw new System.IO.IOException("private driver path"));
+        var display = Assert.Single(scan.Displays);
+        Assert.Equal("5120 x 1440, 120 Hz", display.Mode);
+        Assert.Equal("active", display.Hdr);
+        Assert.Equal("Yes", display.VrrEnabled);
+        Assert.Equal("Scdc:Unavailable", display.Scdc!.Status);
+        Assert.Null(display.Scdc.FrlRateCode);
+        Assert.Contains("Unknown", display.Scdc.ActiveDsc);
+    }
+
     private static LiveDisplayDiagnosticsReader.DisplayCandidate Candidate(
         string path, string instance, uint target, string name) => new(
             0x12345678,

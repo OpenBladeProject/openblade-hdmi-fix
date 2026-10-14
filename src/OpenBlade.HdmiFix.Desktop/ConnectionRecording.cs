@@ -79,7 +79,7 @@ internal sealed class ConnectionRecording
 
         this.selected = selected;
         this.baselineReport = BoundText(baselineReport, MaximumBaselineCharacters);
-        this.readLive = readLive ?? LiveDisplayDiagnosticsReader.Read;
+        this.readLive = readLive ?? (() => LiveDisplayDiagnosticsReader.Read(selected.InstanceId));
         this.readEvents = readEvents;
         this.captureDisplayLog = captureDisplayLog;
         this.duration = duration ?? DefaultDuration;
@@ -327,15 +327,24 @@ internal sealed class ConnectionRecording
                 DiagnosticValues.Text(display.VrrRequested),
                 DiagnosticValues.Text(display.VrrEnabled),
                 DiagnosticValues.Text(display.VrrActive),
-                display.Error.Length == 0 ? "" : DiagnosticValues.Status(display.Error)));
+                display.Error.Length == 0 ? "" : DiagnosticValues.Status(display.Error),
+                SafeScdc(display.Scdc)));
         }
 
         string status = scan.Failure.Length != 0 ? DiagnosticValues.Status(scan.Failure)
             : scan.HasUnresolvedPaths ? "BindingIncomplete" : capture.Status;
         int selectedPaths = displays.Count(display => display.Selected);
-        bool? selectedConnected = selectedPaths == 1 ? true
-            : selectedPaths > 1 || scan.HasUnresolvedPaths || scan.Failure.Length != 0 ? null : false;
+        bool ambiguousBinding = displays.Any(display => display.Selected
+            && display.Error.Contains("Binding:Ambiguous", StringComparison.Ordinal));
+        bool? selectedConnected = selectedPaths == 1 && !ambiguousBinding ? true
+            : selectedPaths > 1 || ambiguousBinding || scan.HasUnresolvedPaths || scan.Failure.Length != 0 ? null : false;
         return RecordingEntry.Sample(now, elapsed, status, selectedConnected, displays);
+    }
+
+    private static ScdcObservation SafeScdc(ScdcObservation? observation)
+    {
+        observation ??= ScdcObservation.Unknown("Scdc:Unavailable");
+        return observation with { Status = DiagnosticValues.Status(observation.Status) };
     }
 
     private void DrainMarkers(StreamWriter writer, FileStream file,
@@ -471,6 +480,9 @@ internal sealed class ConnectionRecording
             $"Timeline limit reached: {(timelineFull ? "Yes" : "No")}",
             $"Windows event evidence: {evidence.Status}",
             $"Private display log: {evidence.DisplayLogStatus}",
+            "HDMI telemetry source: read-only SCDC register observations for the selected HDMI target",
+            "SCDC configuration and lock flags do not prove a stable negotiated link",
+            "Active DSC: Unknown (not exposed by the public API)",
             "The ZIP is sanitized for sharing. The private display log remains outside the ZIP.",
         });
     }
@@ -589,7 +601,8 @@ internal sealed class ConnectionRecording
         string VrrRequested,
         string VrrEnabled,
         string VrrActive,
-        string Error);
+        string Error,
+        ScdcObservation Scdc);
     private sealed record RecordedEvidenceEvent(DateTime Utc, string Provider, int Id, int Level);
     private sealed record EvidenceSummary(
         string Status, string DisplayLogStatus, IReadOnlyList<RecordedEvidenceEvent> Events);

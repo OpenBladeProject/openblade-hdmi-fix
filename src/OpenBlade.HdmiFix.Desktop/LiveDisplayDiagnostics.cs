@@ -15,7 +15,8 @@ internal sealed record LiveDisplayDiagnostics(
     string VrrRequested,
     string VrrEnabled,
     string VrrActive,
-    string Error = "");
+    string Error = "",
+    ScdcObservation? Scdc = null);
 
 internal sealed record LiveDisplayScan(
     IReadOnlyList<LiveDisplayDiagnostics> Displays, string Failure = "", bool HasUnresolvedPaths = false);
@@ -49,17 +50,19 @@ internal static class LiveDisplayDiagnosticsReader
         (MakeNvApiVersion(Marshal.SizeOf<NvTargetInfoData>(), 1),
          MakeNvApiVersion(Marshal.SizeOf<NvGetVrrInfo>(), 1));
 
-    internal static LiveDisplayScan Read()
+    internal static LiveDisplayScan Read() => Read(null);
+
+    internal static LiveDisplayScan Read(string? recordingInstanceId)
     {
         // A timed-out recorder read may still be inside the installed driver.
         // Refresh and later recordings must not pile up additional native calls.
         if (Interlocked.CompareExchange(ref activeRead, 1, 0) != 0)
             return new([], "LiveCapture:Busy");
-        try { return ReadCore(); }
+        try { return ReadCore(recordingInstanceId); }
         finally { Volatile.Write(ref activeRead, 0); }
     }
 
-    private static LiveDisplayScan ReadCore()
+    private static LiveDisplayScan ReadCore(string? recordingInstanceId)
     {
         TopologyRead topology;
         try
@@ -140,14 +143,16 @@ internal static class LiveDisplayDiagnosticsReader
         }
 
         using NvApiSession nvapi = NvApiSession.Open();
-        return BuildScan(candidates, ReadHdr, nvapi.Read, bindingFailure);
+        return BuildScan(candidates, ReadHdr, nvapi.Read, bindingFailure, recordingInstanceId, nvapi.ReadScdc);
     }
 
     internal static LiveDisplayScan BuildScan(
         IReadOnlyList<DisplayCandidate> candidates,
         Func<DisplayCandidate, HdrCapture> readHdr,
         Func<DisplayCandidate, VrrCapture> readVrr,
-        string failure = "")
+        string failure = "",
+        string? recordingInstanceId = null,
+        Func<DisplayCandidate, ScdcObservation>? readScdc = null)
     {
         ArgumentNullException.ThrowIfNull(candidates);
         ArgumentNullException.ThrowIfNull(readHdr);
@@ -172,7 +177,7 @@ internal static class LiveDisplayDiagnosticsReader
 
                 displays.Add(new(candidate.InstanceId, candidate.MonitorName, "Unknown", "Unknown", "Unknown",
                     "Unknown", "Unknown", "Unknown", "Unknown",
-                    JoinErrors(candidate.Error, "Binding:Ambiguous")));
+                    JoinErrors(candidate.Error, "Binding:Ambiguous"), ScdcObservation.Unknown("Scdc:Ambiguous")));
                 continue;
             }
 
@@ -196,6 +201,24 @@ internal static class LiveDisplayDiagnosticsReader
                 vrr = VrrCapture.Unknown("Nvapi:Unavailable");
             }
 
+            ScdcObservation scdc = ScdcObservation.Unknown("Scdc:NotRequested");
+            if (!string.IsNullOrWhiteSpace(recordingInstanceId)
+                && candidate.InstanceId.Equals(recordingInstanceId, StringComparison.OrdinalIgnoreCase))
+            {
+                if (candidate.OutputTechnology != 5)
+                    scdc = ScdcObservation.Unknown("Scdc:NotHdmi");
+                else if (candidate.Error.Length != 0)
+                    scdc = ScdcObservation.Unknown("Scdc:BindingUnavailable");
+                else if (readScdc is null)
+                    scdc = ScdcObservation.Unknown("Scdc:Unavailable");
+                else
+                {
+                    try { scdc = readScdc(candidate); }
+                    catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException or AccessViolationException))
+                    { scdc = ScdcObservation.Unknown("Scdc:Unavailable"); }
+                }
+            }
+
             displays.Add(new(
                 candidate.InstanceId,
                 candidate.MonitorName,
@@ -206,7 +229,7 @@ internal static class LiveDisplayDiagnosticsReader
                 vrr.Requested,
                 vrr.Enabled,
                 vrr.Active,
-                JoinErrors(candidate.Error, hdr.Error, vrr.Error)));
+                JoinErrors(candidate.Error, hdr.Error, vrr.Error), scdc));
         }
 
         bool unresolved = candidates.Any(candidate => candidate.InstanceId.Length == 0);
@@ -520,6 +543,7 @@ internal static class LiveDisplayDiagnosticsReader
         private NvApiUnload? _unload;
         private NvApiGetDisplayIdsFromTarget? _getDisplays;
         private NvApiGetVrrInfo? _getVrr;
+        private ScdcReader? _scdcReader;
         private bool _initialized;
 
         private NvApiSession() { }
@@ -554,7 +578,7 @@ internal static class LiveDisplayDiagnosticsReader
                 session._unload = GetDelegate<NvApiUnload>(query, UnloadId);
                 session._getDisplays = GetDelegate<NvApiGetDisplayIdsFromTarget>(query, GetDisplayIdsFromTargetId);
                 session._getVrr = GetDelegate<NvApiGetVrrInfo>(query, GetVrrInfoId);
-                if (initialize is null || session._unload is null || session._getDisplays is null || session._getVrr is null)
+                if (initialize is null || session._unload is null || session._getDisplays is null)
                 {
                     session.Failure = "Nvapi:EntryPointUnavailable";
                     return session;
@@ -567,6 +591,7 @@ internal static class LiveDisplayDiagnosticsReader
                     return session;
                 }
                 session._initialized = true;
+                session._scdcReader = new ScdcReader(id => query(id));
                 return session;
             }
             catch (Exception e) when (IsExpected(e))
@@ -605,6 +630,53 @@ internal static class LiveDisplayDiagnosticsReader
             status = _getVrr(target.DisplayIds[0], ref info);
             return status == 0 ? DecodeVrr(0, 1, info.Flags)
                 : VrrCapture.Unknown(Error("NvapiVrr", status));
+        }
+
+        internal ScdcObservation ReadScdc(DisplayCandidate candidate)
+        {
+            if (!_initialized || _getDisplays is null || _scdcReader is null)
+                return ScdcObservation.Unknown(Failure.Length == 0 ? "Scdc:Unavailable" : Failure);
+            if (!TargetPathMatches(candidate))
+                return ScdcObservation.Unknown("Scdc:TargetChanged");
+            NvTargetInfoData target = new()
+            {
+                Version = NvApiVersions.NvTarget,
+                AdapterId = new(candidate.AdapterLowPart, candidate.AdapterHighPart),
+                TargetId = candidate.TargetId,
+                DisplayIds = new uint[MaximumNvDisplays],
+                Reserved = new uint[4],
+            };
+            int status = _getDisplays(ref target);
+            if (status != 0 || target.DisplayIdCount != 1 || target.DisplayIds is null || target.DisplayIds[0] == 0)
+                return ScdcObservation.Unknown(status != 0 ? Error("ScdcTarget", status) : "Scdc:TargetAmbiguous");
+            uint displayId = target.DisplayIds[0];
+            ScdcObservation observation = _scdcReader.Read(displayId);
+            // Discard a read spanning a Windows target/monitor or NVIDIA mapping change.
+            target.DisplayIdCount = 0;
+            status = _getDisplays(ref target);
+            if (status != 0 || target.DisplayIdCount != 1 || target.DisplayIds is null
+                || target.DisplayIds[0] != displayId || !TargetPathMatches(candidate))
+                return ScdcObservation.Unknown("Scdc:TargetChanged");
+            return observation;
+        }
+
+        private static bool TargetPathMatches(DisplayCandidate candidate)
+        {
+            if (candidate.InterfacePath.Length == 0) return false;
+            DisplayConfigTargetDeviceName target = new()
+            {
+                Header = new()
+                {
+                    Type = GetTargetName,
+                    Size = (uint)Marshal.SizeOf<DisplayConfigTargetDeviceName>(),
+                    AdapterId = new(candidate.AdapterLowPart, candidate.AdapterHighPart),
+                    Id = candidate.TargetId,
+                },
+                MonitorFriendlyDeviceName = "",
+                MonitorDevicePath = "",
+            };
+            return DisplayConfigGetDeviceInfo(ref target) == 0
+                && candidate.InterfacePath.Equals(target.MonitorDevicePath, StringComparison.OrdinalIgnoreCase);
         }
 
         public void Dispose()

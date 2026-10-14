@@ -4,6 +4,8 @@
 
 ### Added
 
+- Include read-only SCDC FRL configuration, lane-lock and training-ready flags for the selected HDMI connection in recordings. Keep active DSC unknown and preserve the recording when telemetry is unavailable. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
+
 - Record a connection for 60 seconds, mark blackouts, and save a diagnostic ZIP with display changes and relevant Windows event metadata. Stop early or close the app to save partial results. Keep the separate Windows display log private. ([#7](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/7))
 
 ## [0.2.6] - 2026-10-14

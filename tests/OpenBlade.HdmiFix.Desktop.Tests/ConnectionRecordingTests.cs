@@ -284,6 +284,56 @@ public sealed class ConnectionRecordingTests
         Assert.Equal("blackout", entries[1].GetProperty("kind").GetString());
     }
 
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RecordingSerializesScdcAndKeepsActiveDscUnknown(bool readable)
+    {
+        using var output = new TemporaryDirectory();
+        var selected = Monitor("selected", "Previously connected");
+        var scdc = readable ? new ScdcObservation(1, 4, 4, 8, 15, true, "Scdc:Available")
+            : ScdcObservation.Unknown(@"C:\Users\private\read-failure");
+        var recording = Create(output.Path, selected,
+            () => new([Display("selected", "Monitor", "240 Hz") with { Scdc = scdc }]),
+            TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(10));
+        var result = await recording.RunAsync(CancellationToken.None);
+        Assert.NotNull(result.BundlePath);
+        var samples = ReadTimeline(result.DirectoryPath).Where(e => e.GetProperty("kind").GetString() == "sample"
+            && e.GetProperty("displays").GetArrayLength() != 0).ToArray();
+        Assert.NotEmpty(samples);
+        Assert.All(samples, sample =>
+        {
+            var display = Assert.Single(sample.GetProperty("displays").EnumerateArray());
+            var value = display.GetProperty("scdc");
+            Assert.Equal("Unknown (not exposed by the public API)", value.GetProperty("activeDsc").GetString());
+            Assert.Equal(readable ? "Scdc:Available" : "unknown", value.GetProperty("status").GetString());
+            if (readable)
+            {
+                Assert.Equal(4, value.GetProperty("frlRateCode").GetInt32());
+                Assert.Equal(8, value.GetProperty("gbpsPerLane").GetInt32());
+                Assert.Equal(15, value.GetProperty("laneLockMask").GetInt32());
+                Assert.True(value.GetProperty("trainingReady").GetBoolean());
+            }
+            else Assert.False(value.TryGetProperty("frlRateCode", out _));
+        });
+        Assert.DoesNotContain("private", File.ReadAllText(Path.Combine(result.DirectoryPath, "timeline.jsonl")));
+        Assert.Contains("Active DSC: Unknown", File.ReadAllText(Path.Combine(result.DirectoryPath, "summary.txt")));
+    }
+
+    [Fact]
+    public async Task ConsolidatedAmbiguousBindingKeepsRecordedConnectionUnknown()
+    {
+        using var output = new TemporaryDirectory();
+        var recording = Create(output.Path, Monitor("selected", "Previously connected"),
+            () => new([Display("selected", "Monitor", "Unknown") with { Error = "Binding:Ambiguous" }]),
+            TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(10));
+        var result = await recording.RunAsync(CancellationToken.None);
+        var samples = ReadTimeline(result.DirectoryPath).Where(e => e.GetProperty("kind").GetString() == "sample").ToArray();
+        Assert.NotEmpty(samples);
+        Assert.All(samples, e => Assert.Equal(JsonValueKind.Null, e.GetProperty("selectedConnected").ValueKind));
+    }
+
     private sealed class InlineProgress : IProgress<RecordingProgress>
     {
         internal RecordingProgress? Last { get; private set; }
