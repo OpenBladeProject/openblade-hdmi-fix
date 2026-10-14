@@ -11,6 +11,9 @@ public sealed class PatcherBackend : IPatcherBackend
     private readonly Dictionary<string, MonitorState> displayed = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PatchBackup> restorations = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<MonitorView> lastScan = [];
+    private HostDiagnosticSnapshot hostDiagnostics = new("unknown", "unknown", "unknown", []);
+    private LiveDisplayScan liveDisplays = new([], "not captured");
+    private DateTimeOffset? diagnosticCaptureTime;
     public string BackupDirectory => backups.DirectoryPath;
 
     public Task<MonitorScan> ScanAsync() => Task.Run(Scan);
@@ -19,6 +22,9 @@ public sealed class PatcherBackend : IPatcherBackend
     {
         displayed.Clear();
         restorations.Clear();
+        hostDiagnostics = HostDiagnosticsReader.Read();
+        liveDisplays = LiveDisplayDiagnosticsReader.Read();
+        diagnosticCaptureTime = DateTimeOffset.UtcNow;
         HashSet<string>? present = null;
         var notices = new List<string>();
         try { present = PresentMonitorDevices.Read(); }
@@ -185,7 +191,8 @@ public sealed class PatcherBackend : IPatcherBackend
             InspectionDetails: error is SavedMonitorReadException known ? known.Inspection : "");
     }
 
-    public string DiagnosticText(MonitorView? monitor) => FormatRelatedDiagnostics(monitor, lastScan);
+    public string DiagnosticText(MonitorView? monitor) => DiagnosticReport.Format(monitor, lastScan,
+        hostDiagnostics, liveDisplays, diagnosticCaptureTime);
 
     internal static string FormatRelatedDiagnostics(MonitorView? selected, IReadOnlyList<MonitorView> monitors)
     {

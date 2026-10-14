@@ -31,3 +31,11 @@ Backups use atomic file replacement and a flushed temporary file. The backup dir
 The helper applies the initiating account's explicit read grant when inspecting payloads, even with administrator credentials. Private active records block new patches and produce an account-specific explanation; they do not disable restoration of that account's own backups. Discovery has no record-count cutoff. Only new backups are limited to 512 active records, checked before any registry mutation under the operation mutex. Completed records move into an account-specific `history-` folder with the same three principals as the payload and remain readable by ID. Legacy completed records in the main folder are excluded from the active count.
 
 GPU, driver, monitor firmware, and exact laptop variants belong in physical-validation records. Razer Blade detection is an application scope check, not a claim that every Blade model has been tested.
+
+## Read-only connection diagnostics
+
+Each Refresh captures host information, present display-adapter driver keys through SetupAPI, and active Windows DisplayConfig paths. Live observations are associated only with the full selected monitor instance, not its model code or a neighboring saved connection. Copy details uses that snapshot and does not query or mutate devices again.
+
+HDR comes from Windows' advanced-color-info version 2 query. NVIDIA VRR comes from the installed system NVAPI library, using the DisplayConfig adapter LUID and target ID. Capability, requested state, enabled state and instantaneous VRR activity are separate observations. These fields do not prove which HDMI FRL rate or DSC mode the driver negotiated. A missing library, unsupported query, incomplete topology or ambiguous mapping leaves the affected observation unknown.
+
+Only approved descriptive fields and generated status values appear in the report. Device-interface paths and adapter identities remain private matching data; serials, raw EDID, registry paths and native exception text are omitted. These diagnostic reads do not change Patch or Restore admission.

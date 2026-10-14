@@ -27,3 +27,13 @@ The report includes the stored EDID length, declared block count, header and ide
 A monitor can declare additional EDID blocks through an HDMI Forum extension-count override (HF-EEODB). The app checks that declaration, validates every block, and preserves the additional blocks when patching. A longer saved entry without a valid declaration remains unavailable. Copied details show both the base and effective block counts.
 
 The extension-count rules follow the [Linux DRM EDID reader](https://raw.githubusercontent.com/torvalds/linux/master/drivers/gpu/drm/drm_edid.c) and [edid-decode validation](https://raw.githubusercontent.com/gjasny/v4l-utils/master/utils/edid-decode/parse-cta-block.cpp): one three-byte declaration at the start of the first CTA extension, with the stored length matching its count. The app requires CTA revision 3 or later for this declaration and requires every saved block to pass its checksum.
+
+## Reporting repeated blanking after patching
+
+If the laptop stays usable but the external picture keeps going blank, open the app on the laptop display, select the affected saved connection, choose **Refresh**, then **Copy details**. Reading diagnostics does not change the display settings or reinstall the patch.
+
+The report includes the laptop model, Windows build, present graphics adapters and their Windows driver versions, and the saved EDID monitor name. When the exact selected connection has an active display path, it also includes its current mode, connection type, HDR state, and NVIDIA VRR capability, requested state, enabled state, and activity at capture time. An enabled VRR setting can be inactive at that instant.
+
+You can collect the system and saved-monitor information while the monitor is unplugged. Live settings are unavailable for a disconnected entry or a connection the app cannot match exactly. Unsupported or failed driver queries show unknown. The monitor's own Adaptive Sync menu setting is not exposed by these queries. EDID names can be shortened, so an exact retail model number may still need the monitor's About page.
+
+Include whether the laptop still crashes, how often the picture blanks, and the refresh rates already tested. Keep the original backups. Repeated blanking is not a reason to apply another patch or disable DSC without further evidence.
