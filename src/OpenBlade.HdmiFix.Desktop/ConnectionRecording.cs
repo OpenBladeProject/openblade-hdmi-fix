@@ -152,7 +152,7 @@ internal sealed class ConnectionRecording
                 try
                 {
                     capture = await ReadLiveAsync(readerOwner, readLive,
-                        Min(Min(MaximumReadWait, interval), remaining), token)
+                        Min(MaximumReadWait, remaining), token)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -480,7 +480,7 @@ internal sealed class ConnectionRecording
             $"Timeline limit reached: {(timelineFull ? "Yes" : "No")}",
             $"Windows event evidence: {evidence.Status}",
             $"Private display log: {evidence.DisplayLogStatus}",
-            "HDMI telemetry source: read-only SCDC register observations for the selected HDMI target",
+            "HDMI telemetry: see selected-display SCDC availability in timeline.jsonl",
             "SCDC configuration and lock flags do not prove a stable negotiated link",
             "Active DSC: Unknown (not exposed by the public API)",
             "The ZIP is sanitized for sharing. The private display log remains outside the ZIP.",

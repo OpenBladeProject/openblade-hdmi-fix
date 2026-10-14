@@ -266,6 +266,9 @@ public sealed class LiveDisplayDiagnosticsTests
             recordingInstanceId: "selected", readScdc: _ => { calls++; throw new Exception(); });
         Assert.Equal(0, calls);
         Assert.Equal("Scdc:Ambiguous", scan.Displays.Single(d => d.InstanceId == "selected").Scdc!.Status);
+        var ordinary = LiveDisplayDiagnosticsReader.BuildScan([first, second],
+            _ => throw new Exception(), _ => throw new Exception());
+        Assert.Equal("Scdc:NotRequested", Assert.Single(ordinary.Displays).Scdc!.Status);
         Assert.Null(scan.Displays.Single(d => d.InstanceId == "").Scdc!.LaneLockMask);
     }
 

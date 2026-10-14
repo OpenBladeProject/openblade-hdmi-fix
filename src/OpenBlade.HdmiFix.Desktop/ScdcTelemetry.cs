@@ -191,12 +191,13 @@ internal sealed class ScdcReader
             throw new ScdcUnavailableException($"Scdc:ReadFailed:{status}");
         }
 
+        // NVAPI documents pI2cInfo as an output as well as an input, so the driver may
+        // normalize optional speed and port fields. Identity and one-byte buffer geometry
+        // must remain exact before any returned byte is trusted.
         if (info.Version != I2cInfoVersion || info.DisplayMask != mapping.OutputId
             || info.IsDdcPort != 1 || info.DeviceAddress != ScdcAddress
             || info.RegisterAddress != registerBuffer || info.RegisterAddressSize != 1
             || info.Data != dataBuffer || info.DataSize != 1
-            || info.DeprecatedSpeed != DeprecatedI2cSpeed || info.SpeedKhz != 0
-            || info.PortId != 0 || info.IsPortIdSet != 0
             || Marshal.ReadByte(registerBuffer) != register)
         {
             throw new ScdcUnavailableException("Scdc:InvalidMetadata");

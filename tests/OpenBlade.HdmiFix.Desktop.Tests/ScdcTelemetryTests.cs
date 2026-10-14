@@ -210,7 +210,7 @@ public sealed class ScdcTelemetryTests
     }
 
     [Fact]
-    public void Read_RejectsSuccessfulCallThatMutatesAbiMetadata()
+    public void Read_RejectsSuccessfulCallThatMutatesBufferGeometry()
     {
         using var native = FakeNvApi.WithScdc(1, 4, 0);
         native.MutateMetadata = true;
@@ -219,6 +219,23 @@ public sealed class ScdcTelemetryTests
 
         Assert.Null(result.SinkVersion);
         Assert.Equal("Scdc:InvalidMetadata", result.Status);
+    }
+
+    [Fact]
+    public void Read_AcceptsSuccessfulCallThatNormalizesOptionalSpeedAndPortFields()
+    {
+        using var native = FakeNvApi.WithScdc(1, 5, 0x5E);
+        native.NormalizeOptionalMetadata = true;
+
+        ScdcObservation result = new ScdcReader(native.Query).Read(1);
+
+        Assert.Equal((byte)1, result.SinkVersion);
+        Assert.Equal((byte)5, result.FrlRateCode);
+        Assert.Equal(4, result.LaneCount);
+        Assert.Equal(10, result.GbpsPerLane);
+        Assert.Equal((byte)0x0F, result.LaneLockMask);
+        Assert.True(result.TrainingReady);
+        Assert.Equal("Scdc:Available", result.Status);
     }
 
     private sealed class FakeNvApi : IDisposable
@@ -246,6 +263,7 @@ public sealed class ScdcTelemetryTests
         internal int I2cStatus { get; set; }
         internal bool ChangeMappingAfterRead { get; set; }
         internal bool MutateMetadata { get; set; }
+        internal bool NormalizeOptionalMetadata { get; set; }
         internal int MapCalls { get; private set; }
 
         internal static FakeNvApi WithScdc(byte version, byte configuration, byte statusFlags) => new()
@@ -294,6 +312,13 @@ public sealed class ScdcTelemetryTests
             if (MutateMetadata)
             {
                 info.DataSize = 2;
+            }
+            if (NormalizeOptionalMetadata)
+            {
+                info.DeprecatedSpeed = 0;
+                info.SpeedKhz = 4;
+                info.PortId = 7;
+                info.IsPortIdSet = 1;
             }
             return I2cStatus;
         }

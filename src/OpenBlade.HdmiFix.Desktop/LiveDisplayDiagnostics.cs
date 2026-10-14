@@ -177,7 +177,9 @@ internal static class LiveDisplayDiagnosticsReader
 
                 displays.Add(new(candidate.InstanceId, candidate.MonitorName, "Unknown", "Unknown", "Unknown",
                     "Unknown", "Unknown", "Unknown", "Unknown",
-                    JoinErrors(candidate.Error, "Binding:Ambiguous"), ScdcObservation.Unknown("Scdc:Ambiguous")));
+                    JoinErrors(candidate.Error, "Binding:Ambiguous"), ScdcObservation.Unknown(
+                        candidate.InstanceId.Equals(recordingInstanceId, StringComparison.OrdinalIgnoreCase)
+                            ? "Scdc:Ambiguous" : "Scdc:NotRequested")));
                 continue;
             }
 
@@ -635,7 +637,7 @@ internal static class LiveDisplayDiagnosticsReader
         internal ScdcObservation ReadScdc(DisplayCandidate candidate)
         {
             if (!_initialized || _getDisplays is null || _scdcReader is null)
-                return ScdcObservation.Unknown(Failure.Length == 0 ? "Scdc:Unavailable" : Failure);
+                return ScdcObservation.Unknown(Failure.Length == 0 ? "Scdc:Unavailable" : "Scdc:" + Failure);
             if (!TargetPathMatches(candidate))
                 return ScdcObservation.Unknown("Scdc:TargetChanged");
             NvTargetInfoData target = new()
@@ -647,12 +649,25 @@ internal static class LiveDisplayDiagnosticsReader
                 Reserved = new uint[4],
             };
             int status = _getDisplays(ref target);
-            if (status != 0 || target.DisplayIdCount != 1 || target.DisplayIds is null || target.DisplayIds[0] == 0)
-                return ScdcObservation.Unknown(status != 0 ? Error("ScdcTarget", status) : "Scdc:TargetAmbiguous");
+            if (status != 0)
+                return ScdcObservation.Unknown(Error("ScdcTarget", status));
+            if (target.DisplayIdCount == 0)
+                return ScdcObservation.Unknown("Scdc:TargetUnavailable");
+            if (target.DisplayIdCount != 1)
+                return ScdcObservation.Unknown("Scdc:TargetAmbiguous");
+            if (target.DisplayIds is null || target.DisplayIds.Length == 0 || target.DisplayIds[0] == 0)
+                return ScdcObservation.Unknown("Scdc:InvalidTarget");
             uint displayId = target.DisplayIds[0];
             ScdcObservation observation = _scdcReader.Read(displayId);
             // Discard a read spanning a Windows target/monitor or NVIDIA mapping change.
-            target.DisplayIdCount = 0;
+            target = new()
+            {
+                Version = NvApiVersions.NvTarget,
+                AdapterId = new(candidate.AdapterLowPart, candidate.AdapterHighPart),
+                TargetId = candidate.TargetId,
+                DisplayIds = new uint[MaximumNvDisplays],
+                Reserved = new uint[4],
+            };
             status = _getDisplays(ref target);
             if (status != 0 || target.DisplayIdCount != 1 || target.DisplayIds is null
                 || target.DisplayIds[0] != displayId || !TargetPathMatches(candidate))

@@ -45,7 +45,7 @@ public sealed class ConnectionRecordingTests
         }
 
         var recording = Create(output.Path, selected, Read,
-            duration: TimeSpan.FromMilliseconds(90), interval: TimeSpan.FromMilliseconds(10));
+            duration: TimeSpan.FromMilliseconds(500), interval: TimeSpan.FromMilliseconds(10));
 
         ConnectionRecordingResult result = await recording.RunAsync(CancellationToken.None);
 
@@ -94,10 +94,10 @@ public sealed class ConnectionRecordingTests
             duration: TimeSpan.FromSeconds(2), interval: TimeSpan.FromMilliseconds(20));
         using var firstStop = new CancellationTokenSource();
         Task<ConnectionRecordingResult> firstRun = first.RunAsync(firstStop.Token);
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         firstStop.Cancel();
 
-        ConnectionRecordingResult firstResult = await firstRun.WaitAsync(TimeSpan.FromSeconds(1));
+        ConnectionRecordingResult firstResult = await firstRun.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.False(firstResult.Completed);
         Assert.True(firstResult.BundlePath is not null, firstResult.Message);
         Assert.True(File.Exists(firstResult.BundlePath));
@@ -109,7 +109,7 @@ public sealed class ConnectionRecordingTests
             duration: TimeSpan.FromSeconds(1), interval: TimeSpan.FromMilliseconds(20));
         using var secondStop = new CancellationTokenSource(TimeSpan.FromMilliseconds(80));
         ConnectionRecordingResult secondResult = await second.RunAsync(secondStop.Token)
-            .WaitAsync(TimeSpan.FromSeconds(1));
+            .WaitAsync(TimeSpan.FromSeconds(5));
         try
         {
             Assert.False(secondResult.Completed);
@@ -137,7 +137,7 @@ public sealed class ConnectionRecordingTests
             duration: TimeSpan.FromSeconds(2), interval: TimeSpan.FromMilliseconds(20));
         using var stop = new CancellationTokenSource();
         Task<ConnectionRecordingResult> run = recording.RunAsync(stop.Token);
-        await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         int accepted = 0;
         Parallel.For(0, 600, index =>
@@ -155,7 +155,7 @@ public sealed class ConnectionRecordingTests
         });
         stop.Cancel();
 
-        ConnectionRecordingResult result = await run.WaitAsync(TimeSpan.FromSeconds(1));
+        ConnectionRecordingResult result = await run.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.False(result.Completed);
         Assert.InRange(accepted, 1, 192);
         JsonElement[] markers = ReadTimeline(result.DirectoryPath).Where(entry =>
@@ -183,7 +183,7 @@ public sealed class ConnectionRecordingTests
             _ => new([Display("selected", "One", "60 Hz"), Display("selected", "Two", "60 Hz")]),
         };
         var recording = Create(output.Path, selected, Read,
-            TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(10));
+            TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(10));
         var result = await recording.RunAsync(CancellationToken.None);
         Assert.NotNull(result.BundlePath);
         var samples = ReadTimeline(result.DirectoryPath).Where(e => e.GetProperty("kind").GetString() == "sample").ToArray();
@@ -199,7 +199,7 @@ public sealed class ConnectionRecordingTests
         var recording = new ConnectionRecording(Monitor("selected", "Previously connected"), "Safe baseline", output.Path,
             () => new([]), (_, _) => throw new UnauthorizedAccessException("private event path"),
             (_, _) => Task.FromException<string>(new IOException("private display-log path")),
-            TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(10));
+            TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(10));
         var result = await recording.RunAsync(CancellationToken.None);
         Assert.NotNull(result.BundlePath);
         Assert.True(File.Exists(Path.Combine(result.DirectoryPath, "timeline.jsonl")));
@@ -214,12 +214,12 @@ public sealed class ConnectionRecordingTests
         using var output = new TemporaryDirectory();
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var recording = Create(output.Path, Monitor("selected", "Previously connected"),
-            () => { started.TrySetResult(); return new([]); }, TimeSpan.FromSeconds(3), TimeSpan.FromMilliseconds(5));
+            () => { started.TrySetResult(); return new([]); }, TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(5));
         var run = recording.RunAsync(CancellationToken.None);
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         int automatic = Enumerable.Range(0, 300).Count(_ => recording.NotifyDeviceChange());
         int blackouts = Enumerable.Range(0, 100).Count(_ => recording.MarkBlackout());
-        var result = await run.WaitAsync(TimeSpan.FromSeconds(5));
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(15));
         Assert.Equal(128, automatic);
         Assert.Equal(64, blackouts);
         var entries = ReadTimeline(result.DirectoryPath);
@@ -242,7 +242,7 @@ public sealed class ConnectionRecordingTests
             () => { File.WriteAllText(Path.Combine(recording!.DirectoryPath, "private"), "blocked optional folder"); return new([]); },
             (_, _) => new("Events:Complete", []),
             (directory, _) => { Directory.CreateDirectory(directory); return Task.FromResult("DisplayLog:Captured"); },
-            TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(10));
+            TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(10));
         var result = await recording.RunAsync(CancellationToken.None, progress);
         Assert.NotNull(result.BundlePath);
         Assert.True(result.Completed);
@@ -272,18 +272,34 @@ public sealed class ConnectionRecordingTests
         var release = new TaskCompletionSource<LiveDisplayScan>(TaskCreationOptions.RunContinuationsAsynchronously);
         var recording = Create(output.Path, Monitor("selected", "Previously connected"),
             () => { entered.TrySetResult(); return release.Task.GetAwaiter().GetResult(); },
-            TimeSpan.FromMilliseconds(80), TimeSpan.FromMilliseconds(10));
-        var run = recording.RunAsync(CancellationToken.None);
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(1));
-        Assert.True(recording.MarkBlackout());
-        release.SetResult(new([]));
-        var result = await run.WaitAsync(TimeSpan.FromSeconds(2));
-        var entries = ReadTimeline(result.DirectoryPath);
-        long[] times = entries.Select(e => e.GetProperty("elapsedMilliseconds").GetInt64()).ToArray();
-        Assert.Equal(times.Order(), times);
-        Assert.Equal("blackout", entries[1].GetProperty("kind").GetString());
+            TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(20));
+        using var stop = new CancellationTokenSource();
+        var progress = new InlineProgress
+        {
+            OnReport = value => { if (release.Task.IsCompleted && value.Samples > 0) stop.Cancel(); },
+        };
+        var run = recording.RunAsync(stop.Token, progress);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(recording.MarkBlackout());
+            release.SetResult(new([Display("selected", "Monitor", "240 Hz")]));
+            var result = await run.WaitAsync(TimeSpan.FromSeconds(5));
+            var entries = ReadTimeline(result.DirectoryPath);
+            long[] times = entries.Select(e => e.GetProperty("elapsedMilliseconds").GetInt64()).ToArray();
+            Assert.Equal(times.Order(), times);
+            int marker = Array.FindIndex(entries, e => e.GetProperty("kind").GetString() == "blackout");
+            int laterSample = Array.FindIndex(entries, e => e.GetProperty("kind").GetString() == "sample"
+                && e.GetProperty("selectedConnected").ValueKind == JsonValueKind.True);
+            Assert.True(marker > 0 && laterSample > marker);
+        }
+        finally
+        {
+            release.TrySetResult(new([]));
+            stop.Cancel();
+            await run.WaitAsync(TimeSpan.FromSeconds(10));
+        }
     }
-
 
     [Theory]
     [InlineData(true)]
@@ -296,7 +312,7 @@ public sealed class ConnectionRecordingTests
             : ScdcObservation.Unknown(@"C:\Users\private\read-failure");
         var recording = Create(output.Path, selected,
             () => new([Display("selected", "Monitor", "240 Hz") with { Scdc = scdc }]),
-            TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(10));
+            TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(10));
         var result = await recording.RunAsync(CancellationToken.None);
         Assert.NotNull(result.BundlePath);
         var samples = ReadTimeline(result.DirectoryPath).Where(e => e.GetProperty("kind").GetString() == "sample"
@@ -327,17 +343,44 @@ public sealed class ConnectionRecordingTests
         using var output = new TemporaryDirectory();
         var recording = Create(output.Path, Monitor("selected", "Previously connected"),
             () => new([Display("selected", "Monitor", "Unknown") with { Error = "Binding:Ambiguous" }]),
-            TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(10));
+            TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(10));
         var result = await recording.RunAsync(CancellationToken.None);
         var samples = ReadTimeline(result.DirectoryPath).Where(e => e.GetProperty("kind").GetString() == "sample").ToArray();
         Assert.NotEmpty(samples);
         Assert.All(samples, e => Assert.Equal(JsonValueKind.Null, e.GetProperty("selectedConnected").ValueKind));
     }
 
+
+    [Fact]
+    public async Task SlowReadMayExceedSamplingIntervalWithoutLosingItsObservations()
+    {
+        using var output = new TemporaryDirectory();
+        var recording = Create(output.Path, Monitor("selected", "Previously connected"),
+            () =>
+            {
+                Thread.Sleep(100);
+                return new([Display("selected", "Monitor", "240 Hz") with
+                    { Scdc = new(1, 4, 4, 8, 15, true, "Scdc:Available") }]);
+            }, TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(20));
+        var result = await recording.RunAsync(CancellationToken.None);
+        Assert.NotNull(result.BundlePath);
+        var samples = ReadTimeline(result.DirectoryPath).Where(e => e.GetProperty("kind").GetString() == "sample").ToArray();
+        Assert.NotEmpty(samples);
+        Assert.NotEmpty(samples[0].GetProperty("displays").EnumerateArray());
+        Assert.Contains(samples, e => e.GetProperty("displays").EnumerateArray().Any(d =>
+            d.GetProperty("mode").GetString() == "240 Hz"
+            && d.GetProperty("scdc").GetProperty("frlRateCode").GetInt32() == 4));
+    }
+
     private sealed class InlineProgress : IProgress<RecordingProgress>
     {
         internal RecordingProgress? Last { get; private set; }
-        public void Report(RecordingProgress value) => Last = value;
+        internal Action<RecordingProgress>? OnReport { get; init; }
+        public void Report(RecordingProgress value)
+        {
+            Last = value;
+            OnReport?.Invoke(value);
+        }
     }
 
     private static ConnectionRecording Create(string outputRoot, MonitorView selected,
