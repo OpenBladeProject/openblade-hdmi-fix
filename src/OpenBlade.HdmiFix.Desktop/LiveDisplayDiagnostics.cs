@@ -22,6 +22,8 @@ internal sealed record LiveDisplayScan(
 
 internal static class LiveDisplayDiagnosticsReader
 {
+    private static int activeRead;
+
     private const uint QueryOnlyActivePaths = 0x00000002;
     private const int ErrorInsufficientBuffer = 122;
     private const int ErrorNoMoreItems = 259;
@@ -48,6 +50,16 @@ internal static class LiveDisplayDiagnosticsReader
          MakeNvApiVersion(Marshal.SizeOf<NvGetVrrInfo>(), 1));
 
     internal static LiveDisplayScan Read()
+    {
+        // A timed-out recorder read may still be inside the installed driver.
+        // Refresh and later recordings must not pile up additional native calls.
+        if (Interlocked.CompareExchange(ref activeRead, 1, 0) != 0)
+            return new([], "LiveCapture:Busy");
+        try { return ReadCore(); }
+        finally { Volatile.Write(ref activeRead, 0); }
+    }
+
+    private static LiveDisplayScan ReadCore()
     {
         TopologyRead topology;
         try

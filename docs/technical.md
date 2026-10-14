@@ -41,3 +41,13 @@ HDR comes from Windows' advanced-color-info version 2 query. NVIDIA VRR comes fr
 Only approved descriptive fields and generated status values appear in the report. Device-interface paths and adapter identities remain private matching data; serials, raw EDID, registry paths and native exception text are omitted. These diagnostic reads do not change Patch or Restore admission.
 
 Unresolved active paths retain bounded error categories and numeric statuses in the report. They leave matching unknown while preserving independent exact matches. Host and live-display capture have separate failure guards so a recoverable optional-reader failure cannot stop saved-monitor discovery or retain stale live observations.
+
+## Recording a connection
+
+Record connection samples the selected full monitor instance and active display topology for 60 seconds. It records UTC timestamps and elapsed time, Windows display/device notifications, mode/HDR/NVIDIA VRR observations, query failures and user blackout marks. Optional model, firmware and cable fields are identified as user-provided context. A newly connected matching instance is recognized even when the selection came from a disconnected scan. Connection state is unknown when reads fail or matching is incomplete or ambiguous. Other displays receive recording-local labels; raw instance IDs are not written.
+
+The timeline is saved incrementally in the recording folder under `%LocalAppData%\OpenBlade.HdmiFix\Recordings`. Stop and save or closing the window ends sampling and retains partial results. Patch, Restore, Refresh and monitor selection are unavailable during recording. Recording does not alter EDID, display settings, drivers or device state.
+
+The shareable ZIP contains the baseline report, timeline, summary and bounded Windows event metadata for the capture interval. Event payloads and messages are omitted. Failed or limited queries are reported explicitly. A separate `private/display-log.dat`, collected by the installed Windows `dispdiag.exe`, may contain identifying system data and is excluded from the ZIP. No data is uploaded automatically.
+
+These observations do not measure HDMI FRL negotiation, DSC activity or the physical picture. A display can blank without a Windows topology notification; user marks correlate visible blackouts with recorded observations. Event IDs alone do not identify a particular GPU timeout cause.

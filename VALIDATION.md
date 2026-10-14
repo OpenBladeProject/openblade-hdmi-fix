@@ -11,7 +11,7 @@ Local checks cover:
 - WPF construction and synthetic-data rendering at normal and minimum widths, plus expanded diagnostics.
 - A self-contained Windows x64 payload.
 
-The Release solution build completed with zero warnings/errors, and 200 tests passed (111 core and 89 desktop). Regression checks cover other monitor manufacturers, exact EDID-to-instance binding, invalid manufacturer encoding, cross-model patch/restore, strict recovery for other monitors, CTA zero-offset padding, recovery of version-1 backups, the 512-active-backup boundary, private account records, and changed cached EDID data. Temporary Git fixtures verify that packaging rejects dirty source and commit changes while permitting ignored build output. A read-only scan on the development machine returned both a connected internal display and a previously connected saved record. No G93SC entry was present. Normal/minimum and expanded preview screenshots used synthetic data; the real scan applied no override.
+The Release solution build completed with zero warnings/errors, and 217 tests passed (111 core and 106 desktop). Regression checks cover other monitor manufacturers, exact EDID-to-instance binding, invalid manufacturer encoding, cross-model patch/restore, strict recovery for other monitors, CTA zero-offset padding, recovery of version-1 backups, the 512-active-backup boundary, private account records, and changed cached EDID data. Temporary Git fixtures verify that packaging rejects dirty source and commit changes while permitting ignored build output. A read-only scan on the development machine returned both a connected internal display and a previously connected saved record. No G93SC entry was present. Normal/minimum and expanded preview screenshots used synthetic data; the real scan applied no override.
 
 Fixtures are synthetic and do not contain a real monitor serial number. A rendered preview does not validate cached EDID availability on a particular computer, UAC, installed registry permissions, or actual HDMI link negotiation.
 
@@ -29,3 +29,11 @@ Tests cover Windows and NVIDIA ABI sizes, exact display-instance binding, ambigu
 
 User testing with 0.2.5 found that the patch applies and the laptop no longer hard crashes, but the G95 picture still blanks roughly every five seconds at both 120 Hz and 240 Hz, during use and idle. The remaining stability problem is tracked in [issue #6](https://github.com/OpenBladeProject/openblade-hdmi-fix/issues/6). The diagnostic additions help collect evidence; they do not resolve that blanking.
 Review follow-ups cover unresolved active-path errors, recognized connector types including DisplayPort USB tunnels, and recoverable failure isolation for both optional readers. Fault injection verifies that one failed reader preserves the other reader's data and that a failed refresh cannot reuse a former live snapshot. Fatal memory and native-corruption errors are not masked as ordinary missing data.
+
+## Connection recording checks
+
+Recorder tests exercise a disconnected baseline becoming the exact connected instance, same-model isolation, failed and ambiguous reads reporting unknown connection state, durable blackout/device/display markers, optional evidence failures, prompt cancellation with a stuck reader, and isolation from a previous recording's outstanding read. Event tests cover bounded server-side queries, safe metadata parsing, inaccessible logs, truncation and fixed display-log arguments.
+
+A read-only WPF integration check exercised Start, Mark blackout, Stop and save, and close during recording. Patch, Restore, Refresh and monitor selection were disabled during capture and restored afterward. Both stop and close produced partial ZIPs containing only the four allowed report files; the private Windows display log was captured separately. Patch and Restore were never called. Normal-width, minimum-width recording, and expanded diagnostic previews were inspected.
+
+No affected monitor was plugged in for these checks. Windows logs and display snapshots cannot confirm HDMI FRL/DSC negotiation or a physical blackout; that remains part of the user's attended recording.

@@ -60,6 +60,7 @@
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
       <StackPanel Grid.Row="0" Margin="0,0,0,16">
@@ -213,8 +214,47 @@
                    Text="Keep the affected monitor unplugged until you have verified the patch or restore." />
       </StackPanel>
 
+      <Border x:Name="RecordingCard" Grid.Row="5" Margin="0,0,0,16" Style="{StaticResource CardStyle}">
+        <StackPanel>
+          <TextBlock Text="Record connection" Style="{StaticResource SectionLabelStyle}" />
+          <TextBlock Style="{StaticResource MutedTextStyle}"
+                     Text="Select the affected saved connection. Start recording, then plug in the monitor with its existing patch. Recording stops after 60 seconds." />
+          <Expander x:Name="RecordingContextExpander" Header="Monitor and cable details (optional)" Margin="0,12,0,0">
+            <StackPanel Margin="0,8,0,0">
+              <TextBlock Style="{StaticResource MutedTextStyle}" Text="These details are included in the ZIP. Omit serial numbers and personal information." />
+              <Label Target="{Binding ElementName=RecordingModelText}" Content="Monitor model" Padding="0" Margin="0,8,0,4" />
+              <TextBox x:Name="RecordingModelText" MaxLength="80" MinHeight="32" Padding="8,5" automation:AutomationProperties.Name="Monitor model" />
+              <Label Target="{Binding ElementName=RecordingFirmwareText}" Content="Monitor firmware" Padding="0" Margin="0,8,0,4" />
+              <TextBox x:Name="RecordingFirmwareText" MaxLength="32" MinHeight="32" Padding="8,5" automation:AutomationProperties.Name="Monitor firmware" />
+              <Label Target="{Binding ElementName=RecordingCableText}" Content="Cable, adapter or dock" Padding="0" Margin="0,8,0,4" />
+              <TextBox x:Name="RecordingCableText" MaxLength="160" MinHeight="32" Padding="8,5" automation:AutomationProperties.Name="Cable, adapter or dock" />
+            </StackPanel>
+          </Expander>
+          <WrapPanel Margin="0,12,0,0">
+            <Button x:Name="RecordConnectionButton" Content="Record co_nnection" Margin="0,0,8,8"
+                    Click="RecordConnectionButton_Click"
+                    automation:AutomationProperties.HelpText="Record a read-only connection timeline for 60 seconds." />
+            <Button x:Name="MarkBlackoutButton" Content="Mark _blackout" Margin="0,0,8,8"
+                    Visibility="Collapsed" Click="MarkBlackoutButton_Click"
+                    automation:AutomationProperties.HelpText="Add the current time to the recording when the picture goes black." />
+            <Button x:Name="StopRecordingButton" Content="_Stop and save" Margin="0,0,0,8"
+                    Visibility="Collapsed" Click="StopRecordingButton_Click" />
+          </WrapPanel>
+          <ProgressBar x:Name="RecordingProgressBar" Minimum="0" Maximum="60" Height="6"
+                       Visibility="Collapsed" Margin="0,0,0,10"
+                       automation:AutomationProperties.Name="Connection recording progress" />
+          <TextBlock x:Name="RecordingStatusText" Style="{StaticResource MutedTextStyle}"
+                     automation:AutomationProperties.LiveSetting="Polite"
+                     Text="Recording reads display state and Windows events. It does not change your patch or display settings." />
+          <Button x:Name="OpenRecordingButton" Content="Open recording _folder" Margin="0,12,0,0"
+                  HorizontalAlignment="Left" Visibility="Collapsed" Click="OpenRecordingButton_Click" />
+          <TextBlock Margin="0,10,0,0" Style="{StaticResource MutedTextStyle}" FontSize="12"
+                     Text="Share the diagnostic ZIP. The separate Windows display log can contain private system data; keep it private." />
+        </StackPanel>
+      </Border>
+
       <Expander x:Name="DiagnosticsExpander"
-                Grid.Row="5"
+                Grid.Row="6"
                 Header="Backups and diagnostics"
                 automation:AutomationProperties.Name="Backups and diagnostics">
         <Border Margin="0,8,0,0" Style="{StaticResource CardStyle}">
