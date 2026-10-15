@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Rewrite Chinese and Russian guides with clearer instructions and more natural wording. ([#9](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/9))
+
 ### Added
 
 - Add complete Simplified Chinese and Russian user guides, recovery instructions, technical documentation and validation records with language navigation. ([#8](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/8))

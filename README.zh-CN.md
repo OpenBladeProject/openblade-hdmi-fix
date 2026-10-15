@@ -4,12 +4,12 @@
 
 [English](README.md) | 简体中文 | [Русский](README.ru-RU.md)
 
-为 Razer Blade 已保存的显示器连接应用 HDMI 临时修复。
-应用会列出 Windows 记住的显示器，因此无需将显示器重新连接到笔记本，
-就能修改出现问题的连接。
+本工具可修改 Razer Blade 上已保存的显示器连接，临时缓解 HDMI 问题。
+应用会列出 Windows 保存的显示器记录，因此显示器保持断开时，
+也能修复出现问题的连接。
 
 Patch 会将显示器声明的最大 HDMI 链路速率从 FRL10 降至 FRL8，
-并保留 DSC。它会保存原始备份，以供 Restore 恢复。
+并保持 DSC 启用。应用会备份原始数据，供 Restore 恢复。
 
 <a id="requirements"></a>
 
@@ -29,13 +29,13 @@ Patch 会将显示器声明的最大 HDMI 链路速率从 FRL10 降至 FRL8，
 2. 从 [Releases](https://github.com/OpenBladeProject/openblade-hdmi-fix/releases)
    下载 Windows ZIP，解压后打开 `publish` 文件夹中的 **OpenBlade.HdmiFix.exe**。
    正常启动即可。
-3. 选择已保存的显示器连接，查看拟应用的补丁。每条连接记录会单独列出。
+3. 选择已保存的显示器连接，查看将要应用的补丁。每条连接记录会单独列出。
 4. 选择 **Patch（应用补丁）**，接受管理员权限提示，然后等待确认。
 5. 重新连接显示器，检查分辨率、刷新率、HDR、VRR 和音频。
 
 只有所选连接会被修改。更换端口、适配器或驱动后，Windows 可能创建新条目。
 如果问题仍在，请断开显示器的 HDMI 连接，再检查保存的条目。
-已保存数据缺失或不兼容时，Patch 不可用。
+已保存的数据缺失或不兼容时，Patch 不可用。
 
 <a id="restore-and-backups"></a>
 
