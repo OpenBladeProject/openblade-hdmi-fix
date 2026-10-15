@@ -1,5 +1,7 @@
 # OpenBlade HDMI Fix
 
+English | [简体中文](README.zh-CN.md) | [Русский](README.ru-RU.md)
+
 Apply an HDMI workaround to a saved monitor connection on a Razer Blade. The app lists monitors Windows remembers, so you can patch the affected connection while the monitor stays unplugged.
 
 Patch lowers the monitor's advertised maximum HDMI link rates from FRL10 to FRL8 and keeps DSC enabled. It saves an original backup for Restore.

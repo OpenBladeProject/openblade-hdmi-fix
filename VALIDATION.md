@@ -1,5 +1,7 @@
 # Validation
 
+English | [简体中文](docs/zh-CN/VALIDATION.md) | [Русский](docs/ru-RU/VALIDATION.md)
+
 ## Software checks
 
 The profile caps both maximum HDMI FRL fields while retaining DSC on monitors with the matching structured capabilities. Monitor brands and models are unrestricted, and the app displays an unvalidated warning before patching. High-refresh, HDR, VRR, and HDMI audio have not been validated with this app.

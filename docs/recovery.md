@@ -1,5 +1,7 @@
 # Restore and recovery
 
+English | [简体中文](zh-CN/recovery.md) | [Русский](ru-RU/recovery.md)
+
 Keep the affected monitor unplugged until the app verifies Patch or Restore.
 
 If administrator approval is canceled, the app refreshes its saved monitor status. If an operation was interrupted, its original backup remains available. Select the same connection and choose **Restore** when the button is available. This also handles an operation that created an empty override key before stopping.
