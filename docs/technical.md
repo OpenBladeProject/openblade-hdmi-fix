@@ -1,5 +1,7 @@
 # How the patch works
 
+English | [简体中文](zh-CN/technical.md) | [Русский](ru-RU/technical.md)
+
 Windows stores monitor instances under `HKLM\SYSTEM\CurrentControlSet\Enum\DISPLAY`. The app enumerates those saved entries, including disconnected monitors, then reads each entry's `Device Parameters\EDID`. SetupAPI's present monitor list supplies the connection label. A failure to obtain that list disables mutation.
 
 The patch accepts any monitor manufacturer and product with a single HDMI Forum VSDB with OUI `0xC45DD8`, DSC 1.2 support, and two FRL fields at code 5. It validates the EDID header, manufacturer encoding, exact extension count, every 128-byte checksum, and CTA data-block boundaries. The manufacturer and product decoded from the EDID must match the selected saved Windows instance. Every eligible monitor displays an unvalidated warning; this app has no physically validated monitor models. Multiple Forum blocks, an alternative Forum SCDB, truncated data, and unexpected rate pairs are refused. Code 4 in both fields is reported as already capped.
