@@ -261,7 +261,8 @@ public partial class MainWindow : Window
         ConnectionRecording recording;
         try
         {
-            string context = FormatRecordingContext(RecordingModelText.Text, RecordingFirmwareText.Text, RecordingCableText.Text);
+            string context = FormatRecordingContext(RecordingModelText.Text, RecordingFirmwareText.Text, RecordingCableText.Text,
+                (RecordingAdaptiveSyncSelector.SelectedItem as ComboBoxItem)?.Tag as string);
             recording = new ConnectionRecording(selected, _backend.DiagnosticText(selected) + context, _recordingRoot);
         }
         catch (Exception ex) when (ex is not (OutOfMemoryException or StackOverflowException or AccessViolationException))
@@ -361,7 +362,7 @@ public partial class MainWindow : Window
         }
     }
 
-    internal static string FormatRecordingContext(string model, string firmware, string cable)
+    internal static string FormatRecordingContext(string model, string firmware, string cable, string? adaptiveSync = null)
     {
         static string Value(string value, int limit)
         {
@@ -372,6 +373,7 @@ public partial class MainWindow : Window
         }
         return "\n\nUser-provided context (not detected):\nMonitor model: " + Value(model, 80)
             + "\nMonitor firmware: " + Value(firmware, 32)
+            + "\nMonitor Adaptive Sync menu setting: " + (adaptiveSync is "On" or "Off" ? adaptiveSync : "Unknown")
             + "\nCable, adapter or dock: " + Value(cable, 160);
     }
 

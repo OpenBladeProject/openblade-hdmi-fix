@@ -18,7 +18,16 @@ public sealed class DiagnosticReportTests
         var host = new HostDiagnosticSnapshot("Razer Blade 16", "10.0.26100.1234", "24H2",
             [new("NVIDIA GeForce RTX Laptop GPU", "32.0.15.8180", "NVIDIA"),
              new("Intel Graphics", "32.0.101.0000", "Intel")]);
-        string report = DiagnosticReport.Format(selected, [selected], host, new([Display()]),
+        var timing = new SignalTimingObservation(2_376_000_000, 540_000, 11, 240_000, 1001,
+            5120, 1440, 5500, 1800, 240_000, 1001, "Progressive", "SignalTiming:Available");
+        var display = Display() with
+        {
+            SignalTiming = timing,
+            ColorEncoding = "YCbCr420",
+            BitsPerColorChannel = 10,
+            DrivingAdapter = "NVIDIA GeForce RTX 5080 Laptop GPU",
+        };
+        string report = DiagnosticReport.Format(selected, [selected], host, new([display]),
             new DateTimeOffset(2026, 10, 14, 12, 0, 0, TimeSpan.Zero));
         Assert.Contains("Laptop model: Razer Blade 16", report);
         Assert.Contains("Windows build: 10.0.26100.1234", report);
@@ -26,6 +35,16 @@ public sealed class DiagnosticReportTests
         Assert.Contains("GPU 2: Intel Graphics", report);
         Assert.Contains("Current mode: 5120 x 1440, 120 Hz", report);
         Assert.Contains("HDR: active", report);
+        Assert.Contains("Display path GPU: NVIDIA GeForce RTX 5080 Laptop GPU", report);
+        Assert.Contains("Color encoding: YCbCr420", report);
+        Assert.Contains("Bits per color channel: 10", report);
+        Assert.Contains("Signal pixel clock: 2376000000 Hz", report);
+        Assert.Contains("Signal horizontal sync: 540000/11 Hz", report);
+        Assert.Contains("Signal vertical sync: 240000/1001 Hz", report);
+        Assert.Contains("Signal active pixels: 5120 x 1440", report);
+        Assert.Contains("Signal total pixels: 5500 x 1800", report);
+        Assert.Contains("Path refresh: 240000/1001 Hz", report);
+        Assert.Contains("Signal scan-line ordering: Progressive", report);
         Assert.Contains("enabled (NVIDIA): yes", report);
         Assert.Contains("VRR active at capture (NVIDIA): no", report);
         Assert.DoesNotContain("private-instance", report);
@@ -34,10 +53,12 @@ public sealed class DiagnosticReportTests
     [Fact]
     public void DisconnectedEntryNeverBorrowsCurrentSettingsEvenIfTheNativeSnapshotStillMatches()
     {
-        string report = DiagnosticReport.FormatLiveDisplay(Selected("Previously connected"), new([Display()]));
+        var display = Display() with { DrivingAdapter = "NVIDIA private adapter", ColorEncoding = "RGB" };
+        string report = DiagnosticReport.FormatLiveDisplay(Selected("Previously connected"), new([display]));
         Assert.Contains("selected saved connection is disconnected", report);
         Assert.DoesNotContain("5120 x 1440", report);
         Assert.DoesNotContain("HDR: active", report);
+        Assert.DoesNotContain("NVIDIA private adapter", report);
     }
 
     [Fact]

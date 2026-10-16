@@ -34,13 +34,15 @@ The extension-count rules follow the [Linux DRM EDID reader](https://raw.githubu
 
 ## Reporting repeated blanking after patching
 
-If the laptop stays usable but the external picture keeps going blank, open the app on the laptop display, select the affected saved connection, choose **Refresh**, then **Copy details**. Reading diagnostics does not change the display settings or reinstall the patch.
+If the laptop stays usable but the external picture keeps going blank, open the app on the laptop display and select the affected saved connection. Start **Record connection**. Enter the monitor firmware, exact monitor model, cable, adapter and port once. Set **Adaptive Sync** to On or Off from the monitor menu, or leave it Unknown if you cannot confirm it. This setting is manual context; the app does not detect the monitor menu.
 
-The report includes the laptop model, Windows build, present graphics adapters and their Windows driver versions, and the saved EDID monitor name. When the exact selected connection has an active display path, it also includes its current mode, connection type, HDR state, and NVIDIA VRR capability, requested state, enabled state, and activity at capture time. An enabled VRR setting can be inactive at that instant.
+Reconnect the monitor, let the fixed 60-second session run while the picture blanks, and mark each visible blackout. Stop early only if needed, then send the one diagnostic ZIP. Its baseline already includes the details that **Copy details** would provide, so a separate copied report is unnecessary.
+
+The recording includes the laptop model, Windows build, present graphics adapters and their Windows driver versions, and the saved EDID monitor name. For the exact active target it also records the driving GPU, bounded signal pixel clock, rational sync and path refresh rates, active and total dimensions, scan-line order, color encoding, bits per color channel, connection type, HDR, NVIDIA VRR, and read-only SCDC observations when available. The driving GPU is resolved from the active target's adapter identity; the general driver inventory can contain other GPUs. Each unavailable value remains unknown independently, and active DSC remains unknown. An enabled VRR setting can be inactive at that instant.
 
 You can collect the system and saved-monitor information while the monitor is unplugged. Live settings are unavailable for a disconnected entry or a connection the app cannot match exactly. Unsupported or failed driver queries show unknown. The monitor's own Adaptive Sync menu setting is not exposed by these queries. EDID names can be shortened, so an exact retail model number may still need the monitor's About page.
 
-Include whether the laptop still crashes, how often the picture blanks, and the refresh rates already tested. Keep the original backups. Repeated blanking is not a reason to apply another patch or disable DSC without further evidence.
+Include whether the laptop still crashes and the refresh rates already tested. Keep the original backups. Repeated blanking is not a reason to apply another patch or disable DSC without further evidence.
 
 ## Interrupted connection recordings
 

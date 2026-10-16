@@ -640,7 +640,7 @@
         <StackPanel>
           <TextBlock Text="Record connection" Style="{StaticResource SectionLabelStyle}" />
           <TextBlock Style="{StaticResource MutedTextStyle}"
-                     Text="Select the affected connection. Start recording, then connect the patched monitor. Recording stops after 60 seconds. Reopen the app after a crash to recover saved samples." />
+                     Text="Select the affected connection and record while the picture blanks. If the monitor is unplugged, start recording before connecting it. Recording stops after 60 seconds. Reopen the app after a crash to recover saved samples." />
           <Expander x:Name="RecordingContextExpander"
                     Header="Monitor and cable details (optional)"
                     Margin="0,9,0,0">
@@ -652,8 +652,14 @@
               <TextBox x:Name="RecordingModelText" MaxLength="80" automation:AutomationProperties.Name="Monitor model" />
               <Label Target="{Binding ElementName=RecordingFirmwareText}" Foreground="{StaticResource ForegroundBrush}" Content="Monitor firmware" Padding="0" Margin="0,7,0,3" />
               <TextBox x:Name="RecordingFirmwareText" MaxLength="32" automation:AutomationProperties.Name="Monitor firmware" />
-              <Label Target="{Binding ElementName=RecordingCableText}" Foreground="{StaticResource ForegroundBrush}" Content="Cable, adapter or dock" Padding="0" Margin="0,7,0,3" />
-              <TextBox x:Name="RecordingCableText" MaxLength="160" automation:AutomationProperties.Name="Cable, adapter or dock" />
+              <Label Target="{Binding ElementName=RecordingAdaptiveSyncSelector}" Foreground="{StaticResource ForegroundBrush}" Content="Monitor Adaptive Sync setting" Padding="0" Margin="0,7,0,3" />
+              <ComboBox x:Name="RecordingAdaptiveSyncSelector" SelectedIndex="0" automation:AutomationProperties.Name="Monitor Adaptive Sync setting">
+                <ComboBoxItem Content="Unknown" Tag="Unknown" />
+                <ComboBoxItem Content="On" Tag="On" />
+                <ComboBoxItem Content="Off" Tag="Off" />
+              </ComboBox>
+              <Label Target="{Binding ElementName=RecordingCableText}" Foreground="{StaticResource ForegroundBrush}" Content="Cable, adapter, dock and ports" Padding="0" Margin="0,7,0,3" />
+              <TextBox x:Name="RecordingCableText" MaxLength="160" automation:AutomationProperties.Name="Cable, adapter, dock and ports" />
             </StackPanel>
           </Expander>
           <WrapPanel Margin="0,10,0,0">

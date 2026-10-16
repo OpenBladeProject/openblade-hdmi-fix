@@ -16,7 +16,113 @@ internal sealed record LiveDisplayDiagnostics(
     string VrrEnabled,
     string VrrActive,
     string Error = "",
-    ScdcObservation? Scdc = null);
+    ScdcObservation? Scdc = null,
+    SignalTimingObservation? SignalTiming = null,
+    string ColorEncoding = "Unknown",
+    uint? BitsPerColorChannel = null,
+    string DrivingAdapter = "Unknown");
+
+internal sealed record SignalTimingObservation(
+    ulong? PixelClockHz,
+    uint? HorizontalSyncNumerator,
+    uint? HorizontalSyncDenominator,
+    uint? VerticalSyncNumerator,
+    uint? VerticalSyncDenominator,
+    uint? ActiveWidth,
+    uint? ActiveHeight,
+    uint? TotalWidth,
+    uint? TotalHeight,
+    uint? PathRefreshNumerator,
+    uint? PathRefreshDenominator,
+    string ScanLineOrdering,
+    string Status)
+{
+    private const ulong MaximumPixelClockHz = 100_000_000_000;
+    private const uint MaximumDimension = 1_000_000;
+
+    internal SignalTimingObservation Sanitized()
+    {
+        var issues = new List<string>();
+        bool completeExpected = Status == "SignalTiming:Available";
+        ulong? pixelClock = PixelClockHz is > 0 and <= MaximumPixelClockHz ? PixelClockHz : null;
+        if ((PixelClockHz is not null || completeExpected) && pixelClock is null) issues.Add("PixelClock");
+
+        (uint? hNumerator, uint? hDenominator) = SanitizeRational(
+            HorizontalSyncNumerator, HorizontalSyncDenominator, "HSync", completeExpected, issues);
+        (uint? vNumerator, uint? vDenominator) = SanitizeRational(
+            VerticalSyncNumerator, VerticalSyncDenominator, "VSync", completeExpected, issues);
+        (uint? refreshNumerator, uint? refreshDenominator) = SanitizeRational(
+            PathRefreshNumerator, PathRefreshDenominator, "PathRefresh", completeExpected, issues);
+        (uint? activeWidth, uint? activeHeight) = SanitizeRegion(
+            ActiveWidth, ActiveHeight, "Active", completeExpected, issues);
+        (uint? totalWidth, uint? totalHeight) = SanitizeRegion(
+            TotalWidth, TotalHeight, "Total", completeExpected, issues);
+
+        string? suppliedScanLine = ScanLineOrdering;
+        string scanLine = suppliedScanLine is "Progressive" or "Interlaced upper-field-first"
+            or "Interlaced lower-field-first" or "Unknown" ? suppliedScanLine : "Unknown";
+        if (scanLine != suppliedScanLine) issues.Add("ScanLine");
+
+        string status = string.IsNullOrWhiteSpace(Status) ? "SignalTiming:InvalidStatus"
+            : DiagnosticValues.Status(Status);
+        if (status == "unknown") status = "SignalTiming:InvalidStatus";
+        if (issues.Count != 0)
+            status = DiagnosticValues.Status(status + "; Invalid " + string.Join(",", issues));
+
+        return this with
+        {
+            PixelClockHz = pixelClock,
+            HorizontalSyncNumerator = hNumerator,
+            HorizontalSyncDenominator = hDenominator,
+            VerticalSyncNumerator = vNumerator,
+            VerticalSyncDenominator = vDenominator,
+            ActiveWidth = activeWidth,
+            ActiveHeight = activeHeight,
+            TotalWidth = totalWidth,
+            TotalHeight = totalHeight,
+            PathRefreshNumerator = refreshNumerator,
+            PathRefreshDenominator = refreshDenominator,
+            ScanLineOrdering = scanLine,
+            Status = status,
+        };
+    }
+
+    private static (uint?, uint?) SanitizeRational(uint? numerator, uint? denominator,
+        string field, bool required, List<string> issues)
+    {
+        if (numerator is > 0 && denominator is > 0) return (numerator, denominator);
+        if (required || numerator is not null || denominator is not null) issues.Add(field);
+        return (null, null);
+    }
+
+    private static (uint?, uint?) SanitizeRegion(uint? width, uint? height,
+        string field, bool required, List<string> issues)
+    {
+        if (width is > 0 and <= MaximumDimension && height is > 0 and <= MaximumDimension)
+            return (width, height);
+        if (required || width is not null || height is not null) issues.Add(field);
+        return (null, null);
+    }
+}
+
+internal readonly record struct AdapterCapture(string Name, string Error);
+
+internal sealed class AdapterNameCache(int maximumEntries)
+{
+    private readonly Dictionary<(uint LowPart, int HighPart), AdapterCapture> records = [];
+
+    internal AdapterCapture Read(uint lowPart, int highPart, Func<AdapterCapture> read)
+    {
+        if (records.TryGetValue((lowPart, highPart), out AdapterCapture cached)) return cached;
+        AdapterCapture result = read();
+        string safeName = DiagnosticValues.Text(result.Name);
+        result = result with { Name = safeName };
+        if (result.Error.Length == 0 && !safeName.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
+            && records.Count < maximumEntries)
+            records.Add((lowPart, highPart), result);
+        return result;
+    }
+}
 
 internal sealed record LiveDisplayScan(
     IReadOnlyList<LiveDisplayDiagnostics> Displays, string Failure = "", bool HasUnresolvedPaths = false);
@@ -24,6 +130,7 @@ internal sealed record LiveDisplayScan(
 internal static class LiveDisplayDiagnosticsReader
 {
     private static int activeRead;
+    private static readonly AdapterNameCache adapterCache = new(32);
 
     private const uint QueryOnlyActivePaths = 0x00000002;
     private const int ErrorInsufficientBuffer = 122;
@@ -32,13 +139,18 @@ internal static class LiveDisplayDiagnosticsReader
     private const int MaximumModes = 256;
     private const int TopologyAttempts = 3;
     private const uint GetTargetName = 2;
+    private const uint GetAdapterName = 4;
     private const uint GetAdvancedColorInfo2 = 15;
     private const int ModeInfoTarget = 2;
     private const uint InvalidModeIndex = uint.MaxValue;
 
     private const uint DigcfPresent = 0x00000002;
     private const uint DigcfDeviceInterface = 0x00000010;
+    private const uint SpdrpDeviceDescription = 0x00000000;
+    private const uint SpdrpFriendlyName = 0x0000000C;
+    private const uint RegSz = 1;
     private static readonly Guid MonitorInterfaceClass = new("e6f07b5f-ee97-4a90-b076-33f57bf4eaa7");
+    private static readonly Guid AdapterInterfaceClass = new("5b45201d-f2f2-4f3b-85bb-30ff1f953599");
     private static readonly IntPtr InvalidHandleValue = new(-1);
 
     internal static (int Path, int Mode, int TargetName, int Hdr, int NvTarget, int NvVrr) AbiSizes =>
@@ -49,6 +161,8 @@ internal static class LiveDisplayDiagnosticsReader
     internal static (uint NvTarget, uint NvVrr) NvApiVersions =>
         (MakeNvApiVersion(Marshal.SizeOf<NvTargetInfoData>(), 1),
          MakeNvApiVersion(Marshal.SizeOf<NvGetVrrInfo>(), 1));
+
+    internal static int AdapterNameAbiSize => Marshal.SizeOf<DisplayConfigAdapterName>();
 
     internal static LiveDisplayScan Read() => Read(null);
 
@@ -90,6 +204,7 @@ internal static class LiveDisplayDiagnosticsReader
 
         try
         {
+            var adapters = new Dictionary<Luid, AdapterCapture>();
             foreach (DisplayPath path in topology.Paths)
             {
                 DisplayConfigTargetDeviceName targetName = new()
@@ -119,6 +234,11 @@ internal static class LiveDisplayDiagnosticsReader
                     pathError = JoinErrors(pathError, bindingFailure);
                 }
 
+                if (!adapters.TryGetValue(path.AdapterId, out AdapterCapture adapter))
+                {
+                    adapter = ReadAdapterCached(path.AdapterId);
+                    adapters.Add(path.AdapterId, adapter);
+                }
                 candidates.Add(new(
                     path.AdapterId.LowPart,
                     path.AdapterId.HighPart,
@@ -131,7 +251,10 @@ internal static class LiveDisplayDiagnosticsReader
                     path.RefreshNumerator,
                     path.RefreshDenominator,
                     path.OutputTechnology,
-                    pathError));
+                    pathError,
+                    path.SignalTiming,
+                    adapter.Name,
+                    adapter.Error));
             }
         }
         finally
@@ -231,7 +354,10 @@ internal static class LiveDisplayDiagnosticsReader
                 vrr.Requested,
                 vrr.Enabled,
                 vrr.Active,
-                JoinErrors(candidate.Error, hdr.Error, vrr.Error), scdc));
+                JoinErrors(candidate.Error, candidate.AdapterError, hdr.Error, vrr.Error), scdc,
+                candidate.SignalTiming?.Sanitized(), DiagnosticValues.Text(hdr.ColorEncoding),
+                hdr.BitsPerColorChannel is >= 1 and <= 64 ? hdr.BitsPerColorChannel : null,
+                DiagnosticValues.Text(candidate.DrivingAdapter)));
         }
 
         bool unresolved = candidates.Any(candidate => candidate.InstanceId.Length == 0);
@@ -247,19 +373,36 @@ internal static class LiveDisplayDiagnosticsReader
         return new(displays, failure, unresolved);
     }
 
-    internal static HdrCapture DecodeHdr(uint flags, uint activeColorMode)
+    internal static HdrCapture DecodeHdr(uint flags, uint activeColorMode,
+        uint colorEncoding = uint.MaxValue, uint bitsPerColorChannel = 0)
     {
+        string color = ColorEncodingName(colorEncoding);
+        uint? bits = bitsPerColorChannel is >= 1 and <= 64 ? bitsPerColorChannel : null;
+        string colorError = colorEncoding == uint.MaxValue && bitsPerColorChannel == 0
+            ? "" : bits is null ? "Color:InvalidData" : "";
         bool active = (flags & 0x00000002) != 0;
         bool supported = (flags & 0x00000010) != 0;
         bool userEnabled = (flags & 0x00000020) != 0;
         if (activeColorMode > 2 || userEnabled && !supported || activeColorMode == 2 && (!active || !supported))
         {
-            return new("Unknown", "Hdr:InvalidData");
+            return new("Unknown", JoinErrors("Hdr:InvalidData", colorError), color, bits);
         }
 
         string activeText = active && activeColorMode == 2 ? "active" : "inactive";
-        return new($"{activeText}, {(supported ? "supported" : "not supported")}, user setting {(userEnabled ? "enabled" : "disabled")}", "");
+        return new($"{activeText}, {(supported ? "supported" : "not supported")}, user setting {(userEnabled ? "enabled" : "disabled")}",
+            colorError, color, bits);
     }
+
+    internal static string ColorEncodingName(uint value) => value switch
+    {
+        0 => "RGB",
+        1 => "YCbCr444",
+        2 => "YCbCr422",
+        3 => "YCbCr420",
+        4 => "Intensity",
+        uint.MaxValue => "Unknown",
+        _ => $"Unknown({value})",
+    };
 
     internal static VrrCapture DecodeVrr(int status, uint displayCount, uint flags)
     {
@@ -325,6 +468,9 @@ internal static class LiveDisplayDiagnosticsReader
                 uint height = 0;
                 uint refreshNumerator = path.TargetInfo.RefreshRate.Numerator;
                 uint refreshDenominator = path.TargetInfo.RefreshRate.Denominator;
+                SignalTimingObservation timing = new(
+                    null, null, null, null, null, null, null, null, null,
+                    refreshNumerator, refreshDenominator, "Unknown", "SignalTiming:ModeUnavailable");
                 uint modeIndex = path.TargetInfo.ModeInfoIndex;
                 if (modeIndex != InvalidModeIndex && modeIndex < returnedModes)
                 {
@@ -332,8 +478,15 @@ internal static class LiveDisplayDiagnosticsReader
                     if (mode.InfoType == ModeInfoTarget && mode.Id == path.TargetInfo.Id
                         && mode.AdapterId.Equals(path.TargetInfo.AdapterId))
                     {
-                        width = mode.TargetMode.TargetVideoSignalInfo.ActiveSize.Width;
-                        height = mode.TargetMode.TargetVideoSignalInfo.ActiveSize.Height;
+                        DisplayConfigVideoSignalInfo signal = mode.TargetMode.TargetVideoSignalInfo;
+                        width = signal.ActiveSize.Width;
+                        height = signal.ActiveSize.Height;
+                        timing = CreateSignalTiming(signal.PixelRate,
+                            signal.HSyncFrequency.Numerator, signal.HSyncFrequency.Denominator,
+                            signal.VSyncFrequency.Numerator, signal.VSyncFrequency.Denominator,
+                            signal.ActiveSize.Width, signal.ActiveSize.Height,
+                            signal.TotalSize.Width, signal.TotalSize.Height,
+                            refreshNumerator, refreshDenominator, signal.ScanLineOrdering);
                         if (refreshNumerator == 0 || refreshDenominator == 0)
                         {
                             refreshNumerator = mode.TargetMode.TargetVideoSignalInfo.VSyncFrequency.Numerator;
@@ -343,7 +496,8 @@ internal static class LiveDisplayDiagnosticsReader
                 }
 
                 result.Add(new(path.TargetInfo.AdapterId, path.TargetInfo.Id, width, height,
-                    refreshNumerator, refreshDenominator, path.TargetInfo.OutputTechnology));
+                    refreshNumerator, refreshDenominator, path.TargetInfo.OutputTechnology,
+                    timing.Sanitized()));
             }
             return new(result);
         }
@@ -395,6 +549,102 @@ internal static class LiveDisplayDiagnosticsReader
         }
     }
 
+    internal static SignalTimingObservation CreateSignalTiming(ulong pixelClockHz,
+        uint horizontalSyncNumerator, uint horizontalSyncDenominator,
+        uint verticalSyncNumerator, uint verticalSyncDenominator,
+        uint activeWidth, uint activeHeight, uint totalWidth, uint totalHeight,
+        uint pathRefreshNumerator, uint pathRefreshDenominator, uint scanLineOrdering) => new SignalTimingObservation(
+            pixelClockHz,
+            horizontalSyncNumerator, horizontalSyncDenominator,
+            verticalSyncNumerator, verticalSyncDenominator,
+            activeWidth, activeHeight, totalWidth, totalHeight,
+            pathRefreshNumerator, pathRefreshDenominator,
+            scanLineOrdering switch
+            {
+                1 => "Progressive",
+                2 => "Interlaced upper-field-first",
+                3 => "Interlaced lower-field-first",
+                _ => "Unknown",
+            },
+            "SignalTiming:Available").Sanitized();
+
+    private static AdapterCapture ReadAdapter(Luid adapterId)
+    {
+        DisplayConfigAdapterName adapter = new()
+        {
+            Header = new()
+            {
+                Type = GetAdapterName,
+                Size = (uint)Marshal.SizeOf<DisplayConfigAdapterName>(),
+                AdapterId = adapterId,
+            },
+            AdapterDevicePath = "",
+        };
+        int status = DisplayConfigGetDeviceInfo(ref adapter);
+        if (status != 0 || string.IsNullOrWhiteSpace(adapter.AdapterDevicePath))
+            return new("Unknown", Error("AdapterName", status));
+
+        Guid adapterInterfaceClass = AdapterInterfaceClass;
+        IntPtr set = SetupDiGetClassDevsW(ref adapterInterfaceClass, null, IntPtr.Zero,
+            DigcfPresent | DigcfDeviceInterface);
+        if (set == InvalidHandleValue)
+            return new("Unknown", Error("AdapterSet", Marshal.GetLastWin32Error()));
+        try
+        {
+            DeviceInterfaceData interfaceData = new() { Size = (uint)Marshal.SizeOf<DeviceInterfaceData>() };
+            if (!SetupDiOpenDeviceInterfaceW(set, adapter.AdapterDevicePath, 0, ref interfaceData))
+                return new("Unknown", Error("AdapterOpen", Marshal.GetLastWin32Error()));
+
+            DeviceInfoData deviceInfo = new() { Size = (uint)Marshal.SizeOf<DeviceInfoData>() };
+            SetupDiGetDeviceInterfaceDetailW(set, ref interfaceData, IntPtr.Zero, 0,
+                out uint requiredSize, ref deviceInfo);
+            int sizeError = Marshal.GetLastWin32Error();
+            if (sizeError != ErrorInsufficientBuffer || requiredSize < 8 || requiredSize > 4096)
+                return new("Unknown", Error("AdapterDetailSize", sizeError));
+
+            IntPtr detail = Marshal.AllocHGlobal((int)requiredSize);
+            try
+            {
+                Marshal.WriteInt32(detail, IntPtr.Size == 8 ? 8 : 6);
+                deviceInfo.Size = (uint)Marshal.SizeOf<DeviceInfoData>();
+                if (!SetupDiGetDeviceInterfaceDetailW(set, ref interfaceData, detail, requiredSize,
+                    out _, ref deviceInfo))
+                    return new("Unknown", Error("AdapterDetail", Marshal.GetLastWin32Error()));
+                return ReadAdapterName(set, ref deviceInfo);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(detail);
+            }
+        }
+        finally
+        {
+            SetupDiDestroyDeviceInfoList(set);
+        }
+    }
+
+    private static AdapterCapture ReadAdapterCached(Luid adapterId)
+        => adapterCache.Read(adapterId.LowPart, adapterId.HighPart, () => ReadAdapter(adapterId));
+
+    private static AdapterCapture ReadAdapterName(IntPtr set, ref DeviceInfoData deviceInfo)
+    {
+        AdapterCapture friendly = ReadDeviceString(set, ref deviceInfo, SpdrpFriendlyName);
+        return friendly.Error.Length == 0 ? friendly
+            : ReadDeviceString(set, ref deviceInfo, SpdrpDeviceDescription);
+    }
+
+    private static AdapterCapture ReadDeviceString(IntPtr set, ref DeviceInfoData deviceInfo, uint property)
+    {
+        var buffer = new byte[1024];
+        if (!SetupDiGetDeviceRegistryPropertyW(set, ref deviceInfo, property, out uint kind,
+            buffer, (uint)buffer.Length, out uint requiredSize))
+            return new("Unknown", Error("AdapterProperty", Marshal.GetLastWin32Error()));
+        if (kind != RegSz || requiredSize is < 2 or > 1024 || (requiredSize & 1) != 0)
+            return new("Unknown", "AdapterProperty:InvalidData");
+        string name = SanitizeName(Encoding.Unicode.GetString(buffer, 0, (int)requiredSize).TrimEnd('\0'));
+        return name == "Unknown" ? new("Unknown", "AdapterProperty:InvalidData") : new(name, "");
+    }
+
     private static HdrCapture ReadHdr(DisplayCandidate candidate)
     {
         DisplayConfigAdvancedColorInfo2 info = new()
@@ -408,7 +658,8 @@ internal static class LiveDisplayDiagnosticsReader
             },
         };
         int status = DisplayConfigGetDeviceInfo(ref info);
-        return status == 0 ? DecodeHdr(info.Flags, info.ActiveColorMode)
+        return status == 0 ? DecodeHdr(info.Flags, info.ActiveColorMode,
+            info.ColorEncoding, info.BitsPerColorChannel)
             : new("Unknown", Error("HdrQuery", status));
     }
 
@@ -502,9 +753,13 @@ internal static class LiveDisplayDiagnosticsReader
         uint RefreshNumerator,
         uint RefreshDenominator,
         int OutputTechnology,
-        string Error = "");
+        string Error = "",
+        SignalTimingObservation? SignalTiming = null,
+        string DrivingAdapter = "Unknown",
+        string AdapterError = "");
 
-    internal readonly record struct HdrCapture(string Value, string Error);
+    internal readonly record struct HdrCapture(string Value, string Error,
+        string ColorEncoding = "Unknown", uint? BitsPerColorChannel = null);
 
     internal readonly record struct VrrCapture(
         string Capability,
@@ -525,7 +780,8 @@ internal static class LiveDisplayDiagnosticsReader
         uint Height,
         uint RefreshNumerator,
         uint RefreshDenominator,
-        int OutputTechnology);
+        int OutputTechnology,
+        SignalTimingObservation SignalTiming);
 
     private sealed class NativeReadException(string category, long status) : Exception
     {
@@ -824,6 +1080,13 @@ internal static class LiveDisplayDiagnosticsReader
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] internal string MonitorDevicePath;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct DisplayConfigAdapterName
+    {
+        internal DisplayConfigDeviceInfoHeader Header;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] internal string AdapterDevicePath;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct DisplayConfigAdvancedColorInfo2
     {
@@ -892,6 +1155,8 @@ internal static class LiveDisplayDiagnosticsReader
     private static extern int DisplayConfigGetDeviceInfo(ref DisplayConfigTargetDeviceName request);
     [DllImport("user32.dll", EntryPoint = "DisplayConfigGetDeviceInfo")]
     private static extern int DisplayConfigGetDeviceInfo(ref DisplayConfigAdvancedColorInfo2 request);
+    [DllImport("user32.dll", EntryPoint = "DisplayConfigGetDeviceInfo")]
+    private static extern int DisplayConfigGetDeviceInfo(ref DisplayConfigAdapterName request);
 
     [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr SetupDiGetClassDevsW(ref Guid classGuid, string? enumerator, IntPtr parent, uint flags);
@@ -907,6 +1172,11 @@ internal static class LiveDisplayDiagnosticsReader
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetupDiGetDeviceInstanceIdW(IntPtr set, ref DeviceInfoData deviceInfoData,
         StringBuilder instanceId, int instanceIdSize, out int requiredSize);
+    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetupDiGetDeviceRegistryPropertyW(IntPtr set, ref DeviceInfoData deviceInfoData,
+        uint property, out uint propertyRegDataType, byte[] propertyBuffer, uint propertyBufferSize,
+        out uint requiredSize);
     [DllImport("setupapi.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetupDiDestroyDeviceInfoList(IntPtr set);

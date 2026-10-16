@@ -8,6 +8,8 @@
 
 ### Added
 
+- Capture exact-target signal timing and format, the driving GPU, manual Adaptive Sync context, and bounded WER problem classification in one 60-second connection recording. Include the copied diagnostic baseline in the same ZIP. ([#10](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/10))
+
 - Compare saved EDID with the original backup and the exact expected patch in copied diagnostics and connection recordings. Report full matches or changed blocks and byte counts while keeping raw data private. ([#10](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/10))
 
 - Add complete Simplified Chinese and Russian user guides, recovery instructions, technical documentation and validation records with language navigation. ([#8](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/8))
