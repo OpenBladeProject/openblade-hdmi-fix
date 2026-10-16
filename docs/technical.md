@@ -75,3 +75,11 @@ Brand assets are copied unchanged from OpenBlade core commit `806b0fdceaa2aa8645
 The recorder persists its baseline and start metadata before reporting that recording has started. Each timeline entry is flushed to storage. An exclusive session lock remains held through recording and finalization; another app instance skips that session. On launch, bounded recovery checks inactive recording folders and creates a separate partial ZIP from valid saved data. It does not issue display or SCDC queries, replay operations, or infer the cause of interruption.
 
 A torn final timeline entry is excluded. The original timeline and any unfinished archive remain in place. Recovery excludes unfamiliar files, private display logs and matching identifiers, and marks missing final evidence as unavailable. It does not fabricate a final sample or shutdown timestamp. A storage device can still lose recent writes during sudden power loss; software flushing cannot guarantee those bytes survived.
+
+## Comparing saved EDID with a backup
+
+Refresh compares each readable saved EDID with the validated active backup for that exact Windows monitor instance. The expected full EDID is reconstructed from the original backup and its verified patched blocks. Exact comparisons include all bytes and the full length, including blocks untouched by the patch. Installed-override matching is reported separately.
+
+The report distinguishes an exact original match, an exact expected-patch match, other changes, and an unavailable comparison. An exact patched EDID with a matching installed override is consistent with Windows caching the app's patch; it does not establish which data the driver consumed or explain a blackout. Other changes are summarized by block and changed, added or removed byte counts against both references. Raw bytes, serial values, full hashes and backup identifiers are omitted.
+
+Copy details and the connection-recording baseline use the same captured comparison. Missing, private, invalid or ambiguous backups are reported without selecting another monitor's record. Comparison is diagnostic only; existing patch and restoration checks remain unchanged.

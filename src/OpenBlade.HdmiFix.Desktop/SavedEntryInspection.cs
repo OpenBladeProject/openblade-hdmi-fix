@@ -5,6 +5,18 @@ namespace OpenBlade.HdmiFix.Desktop;
 
 internal static class SavedEntryInspection
 {
+    internal const string ComparisonReadUnavailable = "Saved EDID comparison: unavailable\nComparison reason: The saved entry could not be fully read and validated.";
+
+    internal static string DescribeComparison(MonitorState state, BackupInventory inventory, bool trustedBackups)
+    {
+        if (!trustedBackups)
+            return "Saved EDID comparison: unavailable\nComparison reason: The backup folder could not be verified.";
+        if (inventory.HasPrivateBackups && !inventory.Records.Any(backup =>
+            string.Equals(backup.InstanceId, state.InstanceId, StringComparison.Ordinal)))
+            return "Saved EDID comparison: unavailable\nComparison reason: An original backup may belong to another Windows account.";
+        return EdidBackupComparison.Compare(state, inventory.Records).ToDiagnosticText();
+    }
+
     internal static string DescribeEdid(string instanceId, object? value, RegistryValueKind? kind)
     {
         string report = "EDID registry type: " + (kind?.ToString() ?? "missing");

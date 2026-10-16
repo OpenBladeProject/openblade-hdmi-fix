@@ -6,6 +6,7 @@ namespace OpenBlade.HdmiFix.Desktop.Tests;
 
 using Xunit;
 
+[Collection("Connection recording")]
 public sealed class ConnectionRecordingTests
 {
     [Fact]

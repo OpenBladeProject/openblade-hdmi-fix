@@ -14,6 +14,8 @@ Backups from unfinished operations remain in the main backup folder. Finished ba
 
 If the app shows **Saved capabilities changed**, its installed override matches a backup, but Windows has different EDID data for that connection. Keep the backup folder and copy the details to report the change. Restore stays unavailable until the monitor's identity and saved data can be verified.
 
+The EDID comparison in **Copy details** checks the saved data against the original backup and the exact patch the app would produce. A complete match to the patched EDID, together with a matching installed override, is consistent with Windows caching the patch. Other changes are listed by block and byte count. Missing, unreadable or ambiguous backups leave the comparison unavailable. Raw bytes and serial values stay private. The result is also included in the recording ZIP.
+
 Do not upload backup JSON, temporary backup files, raw EDID, or registry exports. They can contain monitor serial numbers and machine-specific identifiers. Copied diagnostics omit those fields.
 
 If reconnecting still crashes the display stack, unplug the monitor. Recover through the laptop's internal display and reopen the app to inspect the saved connection. The app does not reconnect monitors, restart display devices, reset the GPU, or change display modes for you.

@@ -114,7 +114,7 @@ public sealed class PatcherBackend : IPatcherBackend
                     backup is null ? null : Path.Combine(BackupDirectory, backup.Id + ".json"),
                     plan.Disposition is PatchDisposition.Ready or PatchDisposition.AlreadyCapped || backup is not null
                         ? MonitorWarnings.Unvalidated : string.Empty,
-                    InspectionDetails: inspected.Inspection);
+                    InspectionDetails: inspected.Inspection + "\n" + SavedEntryInspection.DescribeComparison(state, inventory, trustedBackups));
                 if (status == "Unsupported configuration" && !state.Overrides.KeyExists
                     && StaleInternalPanel.IsActiveInternal(id, present, diagnosticSnapshot.Live))
                     view = StaleInternalPanel.DescribeConnected(view);
@@ -195,7 +195,8 @@ public sealed class PatcherBackend : IPatcherBackend
             SavedMonitorReadErrors.Describe(reason)
                 + " Keep the monitor unplugged. Open Backups and diagnostics and choose Copy details to report this entry.",
             false, false, null, ReadFailure: reason,
-            InspectionDetails: error is SavedMonitorReadException known ? known.Inspection : "");
+            InspectionDetails: (error is SavedMonitorReadException known ? known.Inspection + "\n" : "")
+                + SavedEntryInspection.ComparisonReadUnavailable);
     }
 
     public string DiagnosticText(MonitorView? monitor) => DiagnosticReport.Format(monitor, lastScan,
