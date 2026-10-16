@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.3.2] - 2026-10-16
+
 ### Changed
 
 - Rewrite Chinese and Russian guides with clearer instructions and more natural wording. ([#9](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/9))
@@ -98,3 +100,7 @@
 [0.2.6]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.5...v0.2.6
 
 [0.3.0]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.2.6...v0.3.0
+
+[0.3.1]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.3.0...v0.3.1
+
+[0.3.2]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.3.1...v0.3.2
