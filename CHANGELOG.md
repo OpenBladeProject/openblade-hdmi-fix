@@ -8,6 +8,8 @@
 
 ### Added
 
+- Compare saved EDID with the original backup and the exact expected patch in copied diagnostics and connection recordings. Report full matches or changed blocks and byte counts while keeping raw data private. ([#10](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/10))
+
 - Add complete Simplified Chinese and Russian user guides, recovery instructions, technical documentation and validation records with language navigation. ([#8](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/8))
 
 ## [0.3.1] - 2026-10-14
