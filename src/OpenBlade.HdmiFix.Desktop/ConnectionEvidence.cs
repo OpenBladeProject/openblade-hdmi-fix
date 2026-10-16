@@ -4,12 +4,19 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 
 namespace OpenBlade.HdmiFix.Desktop;
 
-internal sealed record EvidenceEvent(DateTimeOffset Time, string Provider, int Id, int Level);
+internal sealed record EvidenceEvent(
+    DateTimeOffset Time,
+    string Provider,
+    int Id,
+    int Level,
+    string? ProblemEventName = null,
+    string? ProblemCode = null);
 internal sealed record EvidenceEvents(string Status, IReadOnlyList<EvidenceEvent> Events);
 
 internal static class ConnectionEvidence
@@ -18,6 +25,7 @@ internal static class ConnectionEvidence
     internal const int MaximumXmlCharacters = 32_768;
     internal static readonly TimeSpan MaximumWindow = TimeSpan.FromHours(24);
 
+    private const int MaximumEventDataElements = 64;
     private const int EventBatchSize = 16;
     private const int ErrorInsufficientBuffer = 122;
     private const int ErrorNoMoreItems = 259;
@@ -160,12 +168,54 @@ internal static class ConnectionEvidence
                     DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTimeOffset time))
                 return null;
 
-            return new(time, safeProvider, id, eventLevel);
+            (string? problemEventName, string? problemCode) = safeProvider == "Windows Error Reporting"
+                ? ParseWerClassification(document.Root)
+                : (null, null);
+            return new(time, safeProvider, id, eventLevel, problemEventName, problemCode);
         }
         catch (Exception error) when (error is XmlException or InvalidOperationException or ArgumentException)
         {
             return null;
         }
+    }
+
+    private static (string? EventName, string? Code) ParseWerClassification(XElement? root)
+    {
+        XElement[] eventDataElements = root?.Elements()
+            .Where(element => element.Name.LocalName == "EventData")
+            .Take(2)
+            .ToArray() ?? [];
+        if (eventDataElements.Length != 1)
+            return (null, null);
+        XElement eventData = eventDataElements[0];
+
+        XElement[] data = eventData.Elements()
+            .Where(element => element.Name.LocalName == "Data")
+            .Take(MaximumEventDataElements + 1)
+            .ToArray();
+        if (data.Length > MaximumEventDataElements)
+            return (null, null);
+
+        string[] eventNames = data
+            .Where(element => string.Equals(element.Attribute("Name")?.Value, "EventName", StringComparison.Ordinal))
+            .Select(element => element.Value)
+            .ToArray();
+        string[] problemCodes = data
+            .Where(element => string.Equals(element.Attribute("Name")?.Value, "P1", StringComparison.Ordinal))
+            .Select(element => element.Value)
+            .ToArray();
+        if (eventNames.Length != 1 || problemCodes.Length > 1)
+            return (null, null);
+
+        string eventName = eventNames[0];
+        if (eventName is not ("LiveKernelEvent" or "BlueScreen"))
+            return (null, null);
+
+        string? problemCode = problemCodes.Length == 1
+            && Regex.IsMatch(problemCodes[0], @"\A(?:0[xX])?[0-9A-Fa-f]{1,8}\z", RegexOptions.CultureInvariant)
+                ? problemCodes[0]
+                : null;
+        return (eventName, problemCode);
     }
 
     internal static ProcessStartInfo CreateDisplayLogStartInfo(string directory)

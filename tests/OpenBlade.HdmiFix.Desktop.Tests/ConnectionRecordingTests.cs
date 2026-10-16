@@ -6,6 +6,7 @@ namespace OpenBlade.HdmiFix.Desktop.Tests;
 
 using Xunit;
 
+[Collection("Connection recording")]
 public sealed class ConnectionRecordingTests
 {
     [Fact]
@@ -369,6 +370,8 @@ public sealed class ConnectionRecordingTests
         Assert.Contains("M2T101 v1:02", report);
         Assert.Contains("USB-C/HDMI 2.1 dock @ 120 Hz", report);
         Assert.Contains("not provided", MainWindow.FormatRecordingContext("", "", ""));
+        Assert.Contains("Monitor Adaptive Sync menu setting: On", MainWindow.FormatRecordingContext("", "", "", "On"));
+        Assert.Contains("Monitor Adaptive Sync menu setting: Unknown", MainWindow.FormatRecordingContext("", "", "", @"C:\private-setting"));
         string bounded = MainWindow.FormatRecordingContext(new string('m', 200), "x\nprivate-field: value", "Cable\u200b");
         Assert.DoesNotContain(new string('m', 81), bounded);
         Assert.DoesNotContain("\u200b", bounded, StringComparison.Ordinal);
@@ -508,6 +511,80 @@ public sealed class ConnectionRecordingTests
         var display = Assert.Single(sample.GetProperty("displays").EnumerateArray());
         Assert.Equal("240 Hz", display.GetProperty("mode").GetString());
         Assert.Equal(4, display.GetProperty("scdc").GetProperty("frlRateCode").GetInt32());
+    }
+
+    [Fact]
+    public async Task OneSessionPreservesSignalMetadataAndOnlySafeProblemClassification()
+    {
+        using var output = new TemporaryDirectory();
+        using var stop = new CancellationTokenSource();
+        var timing = new SignalTimingObservation(1900000000, 350000, 1, 239760, 1000,
+            5120, 1440, 5500, 1500, 239760, 1000, "Progressive", "SignalTiming:Available");
+        var display = Display("selected", "Monitor", "239.76 Hz") with
+        {
+            SignalTiming = timing,
+            ColorEncoding = "YCbCr444",
+            BitsPerColorChannel = 10,
+            DrivingAdapter = "NVIDIA GeForce RTX 5080 Laptop GPU",
+        };
+        var recording = new ConnectionRecording(Monitor("selected", "Connected"), "Safe baseline", output.Path,
+            () => new([display]),
+            (_, _) => new("Events:Complete", [
+                new(DateTimeOffset.UtcNow, "Windows Error Reporting", 1001, 2, "LiveKernelEvent", "141"),
+                new(DateTimeOffset.UtcNow, "Windows Error Reporting", 1001, 2, "BlueScreen", "0x00000116"),
+                new(DateTimeOffset.UtcNow, "Windows Error Reporting", 1001, 2, "APPCRASH", @"C:\private"),
+            ]),
+            (_, _) => Task.FromResult("DisplayLog:Unavailable"),
+            TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(10));
+        var progress = new InlineProgress { OnReport = value => { if (value.Samples > 0) stop.Cancel(); } };
+        var result = await recording.RunAsync(stop.Token, progress).WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.NotNull(result.BundlePath);
+        var entries = ReadTimeline(result.DirectoryPath);
+        var sample = Assert.Single(entries, e => e.GetProperty("kind").GetString() == "sample");
+        var observed = Assert.Single(sample.GetProperty("displays").EnumerateArray());
+        Assert.Equal("YCbCr444", observed.GetProperty("colorEncoding").GetString());
+        Assert.Equal(10, observed.GetProperty("bitsPerColorChannel").GetInt32());
+        Assert.Equal(display.DrivingAdapter, observed.GetProperty("drivingAdapter").GetString());
+        Assert.Equal(1900000000UL, observed.GetProperty("signalTiming").GetProperty("pixelClockHz").GetUInt64());
+        Assert.Equal(1000, observed.GetProperty("signalTiming").GetProperty("verticalSyncDenominator").GetInt32());
+        var recovered = JsonDocument.Parse(ConnectionRecording.SanitizeRecoveredEntry(sample.GetRawText(),
+            entries[0].GetProperty("utc").GetDateTimeOffset(), false, 0, out _, out _)).RootElement;
+        Assert.Equal(observed.GetRawText(), recovered.GetProperty("displays")[0].GetRawText());
+        string events = File.ReadAllText(Path.Combine(result.DirectoryPath, "events.json"));
+        var metadata = JsonDocument.Parse(events).RootElement.GetProperty("events");
+        Assert.Equal("LiveKernelEvent", metadata[0].GetProperty("problemEventName").GetString());
+        Assert.Equal("141", metadata[0].GetProperty("problemCode").GetString());
+        Assert.Equal("0x00000116", metadata[1].GetProperty("problemCode").GetString());
+        Assert.False(metadata[2].TryGetProperty("problemEventName", out _));
+        Assert.DoesNotContain("private", events);
+        Assert.DoesNotContain("APPCRASH", events);
+    }
+
+    [Fact]
+    public void RecoveredSignalMetadataDropsPrivateTextAndKeepsIndependentValidFields()
+    {
+        string line = """
+            {"kind":"sample","utc":"2026-10-16T00:00:01Z","elapsedMilliseconds":1000,
+            "selectedConnected":true,"status":"Available","displays":[{"label":"Selected display","selected":true,
+            "name":"Monitor","mode":"240 Hz","connection":"HDMI","hdr":"Unknown",
+            "vrrCapability":"Unknown","vrrRequested":"Unknown","vrrEnabled":"Unknown","vrrActive":"Unknown",
+            "scdc":{"status":"Scdc:NotRequested"},"colorEncoding":"C:\private","bitsPerColorChannel":999,"drivingAdapter":"C:\private",
+            "signalTiming":{"pixelClockHz":1900000000,"activeWidth":5120,"activeHeight":1440,
+            "verticalSyncNumerator":240,"verticalSyncDenominator":0,"scanLineOrdering":"C:\private","status":"SignalTiming:Available"}}]}
+            """;
+        // JSON paths must be escaped before entering the recovery reader.
+        line = line.Replace(@"C:\private", @"C:\\private", StringComparison.Ordinal);
+        string safe = ConnectionRecording.SanitizeRecoveredEntry(line,
+            DateTimeOffset.Parse("2026-10-16T00:00:00Z"), false, 0, out _, out _);
+        var display = JsonDocument.Parse(safe).RootElement.GetProperty("displays")[0];
+        Assert.Equal("Unknown", display.GetProperty("colorEncoding").GetString());
+        Assert.False(display.TryGetProperty("bitsPerColorChannel", out _));
+        Assert.Equal("unknown", display.GetProperty("drivingAdapter").GetString());
+        var timing = display.GetProperty("signalTiming");
+        Assert.Equal(5120, timing.GetProperty("activeWidth").GetInt32());
+        Assert.Equal(1900000000UL, timing.GetProperty("pixelClockHz").GetUInt64());
+        Assert.False(timing.TryGetProperty("verticalSyncNumerator", out _));
+        Assert.DoesNotContain("private", safe);
     }
 
     private sealed class InlineProgress : IProgress<RecordingProgress>

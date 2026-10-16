@@ -331,7 +331,11 @@ internal sealed class ConnectionRecording
                 DiagnosticValues.Text(display.VrrEnabled),
                 DiagnosticValues.Text(display.VrrActive),
                 display.Error.Length == 0 ? "" : DiagnosticValues.Status(display.Error),
-                SafeScdc(display.Scdc)));
+                SafeScdc(display.Scdc),
+                display.SignalTiming?.Sanitized(),
+                SafeColorEncoding(display.ColorEncoding),
+                SafeColorDepth(display.BitsPerColorChannel),
+                DiagnosticValues.Text(display.DrivingAdapter)));
         }
 
         string status = scan.Failure.Length != 0 ? DiagnosticValues.Status(scan.Failure)
@@ -349,6 +353,16 @@ internal sealed class ConnectionRecording
         observation ??= ScdcObservation.Unknown("Scdc:Unavailable");
         return observation with { Status = DiagnosticValues.Status(observation.Status) };
     }
+
+    private static string SafeColorEncoding(string? value) => value is "RGB" or "YCbCr444" or "YCbCr422" or "YCbCr420" or "Intensity"
+        ? value : "Unknown";
+
+    private static string? SafeProblemCode(string? name, string? code) =>
+        name is "LiveKernelEvent" or "BlueScreen" && code is not null
+            && System.Text.RegularExpressions.Regex.IsMatch(code, @"\A(?:0[xX])?[0-9A-Fa-f]{1,8}\z",
+                System.Text.RegularExpressions.RegexOptions.CultureInvariant) ? code : null;
+
+    private static uint? SafeColorDepth(uint? value) => value is >= 1 and <= 64 ? value : null;
 
     private void DrainMarkers(StreamWriter writer, FileStream file,
         ref int entries, ref bool timelineFull)
@@ -434,7 +448,9 @@ internal sealed class ConnectionRecording
             item.Time.UtcDateTime,
             DiagnosticValues.Text(item.Provider),
             item.Id,
-            item.Level)).ToArray() ?? [];
+            item.Level,
+            item.ProblemEventName is "LiveKernelEvent" or "BlueScreen" ? item.ProblemEventName : null,
+            SafeProblemCode(item.ProblemEventName, item.ProblemCode))).ToArray() ?? [];
         return new(eventStatus, logStatus, events);
     }
 
@@ -485,6 +501,10 @@ internal sealed class ConnectionRecording
                 VrrActive = DiagnosticValues.Text(display.VrrActive),
                 Error = string.IsNullOrEmpty(display.Error) ? "" : DiagnosticValues.Status(display.Error),
                 Scdc = SafeScdc(display.Scdc),
+                SignalTiming = display.SignalTiming?.Sanitized(),
+                ColorEncoding = SafeColorEncoding(display.ColorEncoding),
+                BitsPerColorChannel = SafeColorDepth(display.BitsPerColorChannel),
+                DrivingAdapter = DiagnosticValues.Text(display.DrivingAdapter),
             }).ToArray(),
         };
         return JsonSerializer.Serialize(sanitized, JsonOptions);
@@ -638,8 +658,12 @@ internal sealed class ConnectionRecording
         string VrrEnabled,
         string VrrActive,
         string Error,
-        ScdcObservation Scdc);
-    private sealed record RecordedEvidenceEvent(DateTime Utc, string Provider, int Id, int Level);
+        ScdcObservation Scdc,
+        SignalTimingObservation? SignalTiming = null,
+        string ColorEncoding = "Unknown",
+        uint? BitsPerColorChannel = null,
+        string DrivingAdapter = "Unknown");
+    private sealed record RecordedEvidenceEvent(DateTime Utc, string Provider, int Id, int Level, string? ProblemEventName = null, string? ProblemCode = null);
     private sealed record EvidenceSummary(
         string Status, string DisplayLogStatus, IReadOnlyList<RecordedEvidenceEvent> Events);
     private sealed record RecordingEntry(

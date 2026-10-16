@@ -8,7 +8,76 @@ public sealed class LiveDisplayDiagnosticsTests
     public void NativeLayouts_MatchPublishedWindowsAndNvApiAbi()
     {
         Assert.Equal((72, 64, 420, 36, 548, 24), LiveDisplayDiagnosticsReader.AbiSizes);
+        Assert.Equal(276, LiveDisplayDiagnosticsReader.AdapterNameAbiSize);
         Assert.Equal((0x00010224u, 0x00010018u), LiveDisplayDiagnosticsReader.NvApiVersions);
+    }
+
+    [Fact]
+    public void AdapterCacheRetriesTransientFailureAndCachesOnlySanitizedSuccess()
+    {
+        var cache = new AdapterNameCache(32);
+        int reads = 0;
+        AdapterCapture Read() => ++reads == 1
+            ? new("Unknown", "AdapterOpen:2")
+            : new("  NVIDIA GeForce RTX 5080 Laptop GPU\r\n", "");
+
+        AdapterCapture failure = cache.Read(1, 2, Read);
+        AdapterCapture success = cache.Read(1, 2, Read);
+        AdapterCapture cached = cache.Read(1, 2, Read);
+
+        Assert.Equal("AdapterOpen:2", failure.Error);
+        Assert.Equal("NVIDIA GeForce RTX 5080 Laptop GPU", success.Name);
+        Assert.Equal(success, cached);
+        Assert.Equal(2, reads);
+    }
+
+    [Fact]
+    public void BuildScan_PreservesFullPrecisionSignalColorAndDrivingAdapter()
+    {
+        SignalTimingObservation timing = LiveDisplayDiagnosticsReader.CreateSignalTiming(
+            2_376_000_000, 540_000, 11, 240_000, 1001,
+            5120, 1440, 5500, 1800, 240_000, 1001, 1);
+        var candidate = Candidate("path", @"DISPLAY\SAM1111\one", 1, "Odyssey") with
+        {
+            SignalTiming = timing,
+            DrivingAdapter = "NVIDIA GeForce RTX 5080 Laptop GPU",
+        };
+
+        LiveDisplayDiagnostics display = Assert.Single(LiveDisplayDiagnosticsReader.BuildScan([candidate],
+            _ => new("inactive, supported, user setting disabled", "", "YCbCr420", 10),
+            _ => new("No", "No", "No", "No", "")).Displays);
+
+        Assert.Equal((ulong?)2_376_000_000UL, display.SignalTiming!.PixelClockHz);
+        Assert.Equal((uint?)540_000U, display.SignalTiming.HorizontalSyncNumerator);
+        Assert.Equal((uint?)11U, display.SignalTiming.HorizontalSyncDenominator);
+        Assert.Equal((uint?)240_000U, display.SignalTiming.VerticalSyncNumerator);
+        Assert.Equal((uint?)1001U, display.SignalTiming.VerticalSyncDenominator);
+        Assert.Equal((uint?)5120U, display.SignalTiming.ActiveWidth);
+        Assert.Equal((uint?)1440U, display.SignalTiming.ActiveHeight);
+        Assert.Equal((uint?)5500U, display.SignalTiming.TotalWidth);
+        Assert.Equal((uint?)1800U, display.SignalTiming.TotalHeight);
+        Assert.Equal("Progressive", display.SignalTiming.ScanLineOrdering);
+        Assert.Equal("YCbCr420", display.ColorEncoding);
+        Assert.Equal((uint?)10U, display.BitsPerColorChannel);
+        Assert.Equal("NVIDIA GeForce RTX 5080 Laptop GPU", display.DrivingAdapter);
+    }
+
+    [Fact]
+    public void SignalTimingSanitizationKeepsIndependentFieldsAndRejectsInvalidPairs()
+    {
+        var invalid = new SignalTimingObservation(
+            2_376_000_000, 540_000, 0, 240_000, 1001,
+            5120, 1440, 5500, 1800, 240_000, 0,
+            "private\nvalue", "SignalTiming:Available").Sanitized();
+
+        Assert.Equal((ulong?)2_376_000_000UL, invalid.PixelClockHz);
+        Assert.Null(invalid.HorizontalSyncNumerator);
+        Assert.Null(invalid.HorizontalSyncDenominator);
+        Assert.Equal((uint?)240_000U, invalid.VerticalSyncNumerator);
+        Assert.Equal((uint?)5120U, invalid.ActiveWidth);
+        Assert.Equal((uint?)1440U, invalid.ActiveHeight);
+        Assert.Equal("Unknown", invalid.ScanLineOrdering);
+        Assert.Contains("Invalid HSync,PathRefresh,ScanLine", invalid.Status);
     }
 
     [Fact]
@@ -60,14 +129,21 @@ public sealed class LiveDisplayDiagnosticsTests
         Assert.Equal("Unknown", display.Mode);
         Assert.Equal("Unknown", display.Hdr);
         Assert.Equal("Unknown", display.VrrEnabled);
+        Assert.Null(display.SignalTiming);
+        Assert.Equal("Unknown", display.ColorEncoding);
+        Assert.Null(display.BitsPerColorChannel);
+        Assert.Equal("Unknown", display.DrivingAdapter);
         Assert.Equal("Binding:Ambiguous", display.Error);
     }
 
     [Fact]
     public void BuildScan_HdrFailurePreservesModeAndVrrFields()
     {
+        SignalTimingObservation timing = LiveDisplayDiagnosticsReader.CreateSignalTiming(
+            2_376_000_000, 540_000, 11, 240_000, 1001,
+            5120, 1440, 5500, 1800, 120, 1, 1);
         LiveDisplayScan result = LiveDisplayDiagnosticsReader.BuildScan(
-            [Candidate("path", @"DISPLAY\SAM1111\one", 1, "Odyssey")],
+            [Candidate("path", @"DISPLAY\SAM1111\one", 1, "Odyssey") with { SignalTiming = timing }],
             _ => new("Unknown", "HdrQuery:50"),
             _ => new("Yes", "No", "Yes", "No", ""));
 
@@ -76,7 +152,24 @@ public sealed class LiveDisplayDiagnosticsTests
         Assert.Equal("5120 x 1440, 120 Hz", display.Mode);
         Assert.Equal("Yes", display.VrrCapability);
         Assert.Equal("Yes", display.VrrEnabled);
+        Assert.Equal((ulong?)2_376_000_000UL, display.SignalTiming!.PixelClockHz);
+        Assert.Equal("Unknown", display.ColorEncoding);
+        Assert.Null(display.BitsPerColorChannel);
         Assert.Equal("HdrQuery:50", display.Error);
+    }
+
+    [Fact]
+    public void BuildScan_MissingTargetModeKeepsPathModeAndSignalTimingUnknown()
+    {
+        LiveDisplayDiagnostics display = Assert.Single(LiveDisplayDiagnosticsReader.BuildScan(
+            [Candidate("path", @"DISPLAY\SAM1111\one", 1, "Odyssey")],
+            _ => new("active", "", "RGB", 8),
+            _ => new("No", "No", "No", "No", "")).Displays);
+
+        Assert.Equal("5120 x 1440, 120 Hz", display.Mode);
+        Assert.Null(display.SignalTiming);
+        Assert.Equal("RGB", display.ColorEncoding);
+        Assert.Equal((uint?)8U, display.BitsPerColorChannel);
     }
 
     [Fact]
@@ -94,6 +187,11 @@ public sealed class LiveDisplayDiagnosticsTests
         LiveDisplayDiagnosticsReader.HdrCapture invalid = LiveDisplayDiagnosticsReader.DecodeHdr(0x20, 0);
         Assert.Equal("Unknown", invalid.Value);
         Assert.Equal("Hdr:InvalidData", invalid.Error);
+
+        LiveDisplayDiagnosticsReader.HdrCapture color =
+            LiveDisplayDiagnosticsReader.DecodeHdr(0x10, 0, 3, 10);
+        Assert.Equal("YCbCr420", color.ColorEncoding);
+        Assert.Equal((uint?)10U, color.BitsPerColorChannel);
     }
 
     [Fact]
@@ -237,6 +335,35 @@ public sealed class LiveDisplayDiagnosticsTests
         Assert.Equal(8, recording.Displays[0].Scdc!.GbpsPerLane);
         Assert.Null(recording.Displays[1].Scdc!.FrlRateCode);
         Assert.Equal("Scdc:NotRequested", recording.Displays[1].Scdc!.Status);
+    }
+
+    [Fact]
+    public void AdapterNameFailureDoesNotBlockSelectedScdcOrIndependentSignalMetadata()
+    {
+        const string selectedId = @"DISPLAY\SAM1111\selected";
+        SignalTimingObservation timing = LiveDisplayDiagnosticsReader.CreateSignalTiming(
+            2_376_000_000, 540_000, 11, 240_000, 1001,
+            5120, 1440, 5500, 1800, 240_000, 1001, 1);
+        var selected = Candidate("selected-path", selectedId, 1, "Selected") with
+        {
+            SignalTiming = timing,
+            AdapterError = "AdapterName:50",
+        };
+        int reads = 0;
+
+        LiveDisplayDiagnostics display = Assert.Single(LiveDisplayDiagnosticsReader.BuildScan([selected],
+            _ => new("active", "", "RGB", 10),
+            _ => new("No", "No", "No", "No", ""),
+            recordingInstanceId: selectedId,
+            readScdc: _ => { reads++; return new(1, 4, 4, 8, 15, true, "Scdc:Available"); }).Displays);
+
+        Assert.Equal(1, reads);
+        Assert.Equal("Scdc:Available", display.Scdc!.Status);
+        Assert.Equal((ulong?)2_376_000_000UL, display.SignalTiming!.PixelClockHz);
+        Assert.Equal("RGB", display.ColorEncoding);
+        Assert.Equal((uint?)10U, display.BitsPerColorChannel);
+        Assert.Equal("Unknown", display.DrivingAdapter);
+        Assert.Equal("AdapterName:50", display.Error);
     }
 
     [Theory]

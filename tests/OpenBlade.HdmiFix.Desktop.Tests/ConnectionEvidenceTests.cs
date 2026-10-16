@@ -26,6 +26,77 @@ public sealed class ConnectionEvidenceTests
     }
 
     [Theory]
+    [InlineData("LiveKernelEvent", "141")]
+    [InlineData("BlueScreen", "0x00000116")]
+    public void ParserReturnsOnlyAllowlistedWerClassification(string eventName, string problemCode)
+    {
+        string xml = EventXml("Windows Error Reporting", 1001, 4, "2026-10-14T07:08:09Z",
+            $"<EventData><Data Name='EventName'>{eventName}</Data>" +
+            $"<Data Name='P1'>{problemCode}</Data>" +
+            "<Data Name='P2'>C:\\Users\\private\\dump.dmp</Data>" +
+            "<Data Name='AttachedFiles'>C:\\Users\\private\\report.wer</Data></EventData>");
+
+        EvidenceEvent? result = ConnectionEvidence.ParseEventXml(xml);
+
+        Assert.Equal(eventName, result!.ProblemEventName);
+        Assert.Equal(problemCode, result.ProblemCode);
+        Assert.DoesNotContain("private", result.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("dump", result.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("APPCRASH", "c0000005")]
+    [InlineData("LiveKernelEvent", "123456789")]
+    [InlineData("BlueScreen", "0x123456789")]
+    [InlineData("LiveKernelEvent", "141\n")]
+    public void ParserDoesNotRetainUnknownOrInvalidWerClassification(string eventName, string problemCode)
+    {
+        string xml = EventXml("Windows Error Reporting", 1001, 4, "2026-10-14T07:08:09Z",
+            $"<EventData><Data Name='EventName'>{eventName}</Data>" +
+            $"<Data Name='P1'>{problemCode}</Data>" +
+            "<Data Name='AppName'>private.exe</Data></EventData>");
+
+        EvidenceEvent? result = ConnectionEvidence.ParseEventXml(xml);
+
+        Assert.NotNull(result);
+        Assert.Equal(eventName is "LiveKernelEvent" or "BlueScreen" ? eventName : null,
+            result.ProblemEventName);
+        Assert.Null(result.ProblemCode);
+        Assert.DoesNotContain("private", result.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("<Data Name='EventName'>LiveKernelEvent</Data><Data Name='EventName'>BlueScreen</Data><Data Name='P1'>141</Data>")]
+    [InlineData("<Data Name='EventName'>LiveKernelEvent</Data><Data Name='P1'>141</Data><Data Name='P1'>117</Data>")]
+    public void ParserClearsAmbiguousWerClassificationWithoutDroppingTheEvent(string data)
+    {
+        EvidenceEvent? result = ConnectionEvidence.ParseEventXml(EventXml(
+            "Windows Error Reporting", 1001, 4, "2026-10-14T07:08:09Z", $"<EventData>{data}</EventData>"));
+
+        Assert.NotNull(result);
+        Assert.Equal("Windows Error Reporting", result.Provider);
+        Assert.Equal(1001, result.Id);
+        Assert.Equal(4, result.Level);
+        Assert.Null(result.ProblemEventName);
+        Assert.Null(result.ProblemCode);
+    }
+
+    [Fact]
+    public void ParserBoundsWerDataWithoutDroppingValidSystemMetadata()
+    {
+        string data = string.Concat(Enumerable.Range(0, 65)
+            .Select(index => $"<Data Name='Private{index}'>secret-{index}</Data>"));
+        EvidenceEvent? result = ConnectionEvidence.ParseEventXml(EventXml(
+            "Windows Error Reporting", 1001, 4, "2026-10-14T07:08:09Z", $"<EventData>{data}</EventData>"));
+
+        Assert.NotNull(result);
+        Assert.Equal(DateTimeOffset.Parse("2026-10-14T07:08:09Z"), result.Time);
+        Assert.Null(result.ProblemEventName);
+        Assert.Null(result.ProblemCode);
+        Assert.DoesNotContain("secret", result.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
     [InlineData("Unrelated-Provider")]
     [InlineData("Display/../../private")]
     public void ParserRejectsProvidersOutsideTheFixedAllowlist(string provider)
