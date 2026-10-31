@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.3.3] - 2026-11-01
+
+### Fixed
+
+- Choose the active HDMI connection for recording independently of the saved Patch/Restore selection. Refresh its identity before Start and require an explicit choice when the saved connection is not active. ([#11](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/11))
+- Warn when the selected monitor is missing or its capture cannot be verified. Preserve saved-sample coverage and gap warnings in final results and recovered diagnostic ZIPs. ([#11](https://github.com/OpenBladeProject/openblade-hdmi-fix/pull/11))
+
 ## [0.3.2] - 2026-10-16
 
 ### Changed
@@ -104,3 +111,5 @@
 [0.3.1]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.3.0...v0.3.1
 
 [0.3.2]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.3.1...v0.3.2
+
+[0.3.3]: https://github.com/OpenBladeProject/openblade-hdmi-fix/compare/v0.3.2...v0.3.3
