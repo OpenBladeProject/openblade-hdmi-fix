@@ -11,7 +11,8 @@ public sealed record MonitorView(
     public string DisplayLabel => $"{Name} ({ConnectionLabel}, {InstanceLabel})";
 }
 
-public sealed record MonitorScan(IReadOnlyList<MonitorView> Monitors, string Message);
+public sealed record MonitorScan(IReadOnlyList<MonitorView> Monitors, string Message,
+    IReadOnlyList<MonitorView>? RecordingTargets = null);
 public sealed record OperationOutcome(bool Success, string Message);
 
 public interface IPatcherBackend

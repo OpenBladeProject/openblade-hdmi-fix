@@ -10,6 +10,10 @@ namespace OpenBlade.HdmiFix.Desktop;
 internal sealed record RecordingRecoveryResult(
     IReadOnlyList<ConnectionRecordingResult> Recordings, int UnavailableCount, bool ScanLimitReached)
 {
+    internal string Warning => string.Join(" ", Recordings.Select(recording => recording.Warning)
+        .Where(warning => warning.Length != 0).Distinct(StringComparer.Ordinal)
+        .Select(warning => "Recovered recording: " + warning));
+
     internal string Message => string.Join(" ", new[]
     {
         Recordings.Count == 0 ? "" : Recordings.Count == 1
@@ -147,6 +151,7 @@ internal static class RecordingRecovery
         int offset = 0;
         int entries = 0;
         int samples = 0;
+        var coverage = new SelectedMonitorCoverage();
         int blackouts = 0;
         long elapsed = 0;
         bool stopped = false;
@@ -164,7 +169,13 @@ internal static class RecordingRecovery
                 timeline.Append(sanitized).Append("\r\n");
                 entries++;
                 elapsed = nextElapsed;
-                if (kind == "sample") samples++;
+                if (kind == "sample")
+                {
+                    using JsonDocument saved = JsonDocument.Parse(sanitized);
+                    JsonElement connected = saved.RootElement.GetProperty("selectedConnected");
+                    coverage = coverage.Add(connected.ValueKind == JsonValueKind.Null ? null : connected.GetBoolean());
+                    samples++;
+                }
                 if (kind == "blackout") blackouts++;
                 stopped = kind == "stop";
                 offset = newline + 1;
@@ -183,6 +194,7 @@ internal static class RecordingRecovery
             $"Last saved elapsed time: {elapsed / 1000d:0.000} seconds",
             $"Timeline entries recovered: {entries}",
             $"Live samples: {samples}",
+            coverage.Summary,
             $"Blackout markers: {blackouts}",
             $"Saved stop entry: {(stopped ? "Present (finalization was interrupted)" : "Absent")}",
             $"Incomplete or unrecognized tail omitted: {(offset < original.Length ? "Yes" : "No")}",
@@ -202,7 +214,7 @@ internal static class RecordingRecovery
             ["events.json"] = Utf8.GetBytes("{\"status\":\"Unavailable:InterruptedRecovery\",\"displayLogStatus\":\"NotIncluded\",\"events\":[]}"),
         };
         string bundle = CreateBundle(directory, "recovered-recording.zip", contents);
-        return new(directory, bundle, false, "Interrupted recording recovered. A partial shareable bundle is ready.");
+        return new(directory, bundle, false, "Interrupted recording recovered. A partial shareable bundle is ready.", coverage.Warning);
     }
 
     internal static string CreateBundle(string directory, string name, IReadOnlyDictionary<string, byte[]> contents)

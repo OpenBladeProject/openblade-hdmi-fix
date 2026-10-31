@@ -45,6 +45,8 @@ public sealed class ConnectionRecordingTests
         Assert.Null(readinessError);
         Assert.True(ready);
         Assert.Equal(0, reads);
+        Assert.Contains("never captured", result.Warning);
+        Assert.Contains("Selected monitor captured samples: 0", File.ReadAllText(Path.Combine(result.DirectoryPath, "summary.txt")));
         Assert.NotNull(result.BundlePath);
         Assert.Empty(RecordingRecovery.Recover(output.Path).Recordings);
     }
@@ -587,6 +589,94 @@ public sealed class ConnectionRecordingTests
         Assert.DoesNotContain("private", safe);
     }
 
+    [Fact]
+    public async Task ProgressTracksOnlySavedSamplesAndWarningsFollowExactCaptureTransitions()
+    {
+        using var output = new TemporaryDirectory();
+        using var stop = new CancellationTokenSource();
+        int reads = 0;
+        LiveDisplayScan Read() => ++reads switch
+        {
+            1 or 3 => new([]),
+            2 => new([Display("selected", "Monitor", "120 Hz")]),
+            4 => new([Display("selected", "Monitor", "Unknown") with { Error = "Binding:Ambiguous" }]),
+            _ => throw new InvalidOperationException("query failed"),
+        };
+        var recording = Create(output.Path, Monitor("selected", "Previously connected"), Read,
+            TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(10));
+        var observations = new List<RecordingProgress>();
+        Exception? progressError = null;
+        var progress = new InlineProgress { OnReport = value =>
+        {
+            try
+            {
+                var saved = ReadTimeline(recording.DirectoryPath)
+                    .Where(entry => entry.GetProperty("kind").GetString() == "sample").ToArray();
+                Assert.Equal(saved.Length, value.Samples);
+                Assert.Equal(saved.Count(entry => entry.GetProperty("selectedConnected").ValueKind == JsonValueKind.True), value.SelectedCapturedSamples);
+                Assert.Equal(saved.Count(entry => entry.GetProperty("selectedConnected").ValueKind == JsonValueKind.False), value.SelectedMissingSamples);
+                Assert.Equal(saved.Count(entry => entry.GetProperty("selectedConnected").ValueKind == JsonValueKind.Null), value.SelectedUnverifiedSamples);
+            }
+            catch (Exception error) { progressError = error; }
+            observations.Add(value);
+            if (value.Samples == 5) stop.Cancel();
+        } };
+        var result = await recording.RunAsync(stop.Token, progress).WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Null(progressError);
+        Assert.Contains("Waiting", observations[0].Warning);
+        var samples = observations.Where(value => value.Samples > 0 && !value.IsFinalizing).ToArray();
+        Assert.Equal(5, samples.Length);
+        Assert.False(samples[0].SelectedConnected);
+        Assert.Contains("No matching active connection", samples[0].Warning);
+        Assert.True(samples[1].SelectedConnected);
+        Assert.Empty(samples[1].Warning);
+        Assert.False(samples[2].SelectedConnected);
+        Assert.Equal(samples[0].Warning, samples[2].Warning);
+        Assert.Null(samples[3].SelectedConnected);
+        Assert.Null(samples[4].SelectedConnected);
+        Assert.Equal(samples[3].Warning, samples[4].Warning);
+        Assert.Contains("could not be verified", samples[4].Warning);
+        Assert.DoesNotContain("No matching active connection", samples[4].Warning);
+        Assert.True(observations[^1].IsFinalizing);
+        Assert.Contains("gaps", observations[^1].Warning);
+        Assert.Contains("gaps", result.Warning);
+        string summary = File.ReadAllText(Path.Combine(result.DirectoryPath, "summary.txt"));
+        Assert.Contains("Selected monitor captured samples: 1", summary);
+        Assert.Contains("Selected monitor not captured samples: 2", summary);
+        Assert.Contains("Selected monitor unverified samples: 2", summary);
+        Assert.Contains(result.Warning, summary);
+    }
+
+    [Fact]
+    public async Task UnrelatedPathFailurePreservesVerifiedSelectedCapture()
+    {
+        using var output = new TemporaryDirectory();
+        using var stop = new CancellationTokenSource();
+        var recording = Create(output.Path, Monitor("selected", "Previously connected"),
+            () => new([Display("selected", "Monitor", "120 Hz")], "BindingIncomplete; BindingOpen:13", true),
+            TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(10));
+        var progress = new InlineProgress { OnReport = value => { if (value.Samples > 0) stop.Cancel(); } };
+        var result = await recording.RunAsync(stop.Token, progress).WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Equal(1, progress.Last!.SelectedCapturedSamples);
+        Assert.Equal(0, progress.Last.SelectedUnverifiedSamples);
+        Assert.Empty(result.Warning);
+        Assert.Contains("every saved sample", File.ReadAllText(Path.Combine(result.DirectoryPath, "summary.txt")));
+    }
+
+    [Fact]
+    public void SavedSampleCoverageDoesNotClaimContinuousCoverageOrSuccessWithoutSamples()
+    {
+        var empty = new SelectedMonitorCoverage();
+        Assert.Contains("never captured", empty.Warning);
+        Assert.Contains("unverified samples: 0", empty.Summary);
+        Assert.DoesNotContain("every saved sample", empty.Summary);
+        var captured = empty.Add(true);
+        Assert.Empty(captured.Warning);
+        Assert.Contains("does not establish continuous coverage", captured.Summary);
+        Assert.Contains("gaps", captured.Add(null).Warning);
+        Assert.Contains("gaps", captured.Add(false).Warning);
+    }
+
     private sealed class InlineProgress : IProgress<RecordingProgress>
     {
         internal RecordingProgress? Last { get; private set; }
@@ -636,10 +726,14 @@ public sealed class ConnectionRecordingTests
         "Yes",
         "No");
 
-    private static JsonElement[] ReadTimeline(string directory) => File
-        .ReadAllLines(Path.Combine(directory, "timeline.jsonl"))
-        .Select(line => JsonDocument.Parse(line).RootElement.Clone())
-        .ToArray();
+    private static JsonElement[] ReadTimeline(string directory)
+    {
+        using var file = new FileStream(Path.Combine(directory, "timeline.jsonl"), FileMode.Open,
+            FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(file);
+        return reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => JsonDocument.Parse(line).RootElement.Clone()).ToArray();
+    }
 
     private sealed class TemporaryDirectory : IDisposable
     {
