@@ -641,6 +641,21 @@
           <TextBlock Text="Record connection" Style="{StaticResource SectionLabelStyle}" />
           <TextBlock Style="{StaticResource MutedTextStyle}"
                      Text="Select the affected connection and record while the picture blanks. If the monitor is unplugged, start recording before connecting it. Recording stops after 60 seconds. Reopen the app after a crash to recover saved samples." />
+          <Label Content="Monitor to record" Target="{Binding ElementName=RecordingTargetSelector}"
+                 Foreground="{StaticResource ForegroundBrush}" Padding="0" Margin="0,10,0,3" />
+          <ComboBox x:Name="RecordingTargetSelector"
+                    SelectionChanged="RecordingTargetSelector_SelectionChanged"
+                    automation:AutomationProperties.Name="Monitor to record">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding DisplayLabel}" TextWrapping="Wrap" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <TextBlock x:Name="RecordingTargetHintText" Margin="0,6,0,0"
+                     Style="{StaticResource MutedTextStyle}"
+                     automation:AutomationProperties.LiveSetting="Polite"
+                     Text="Choose the HDMI connection to record. Patch and Restore use the saved monitor above." />
           <Expander x:Name="RecordingContextExpander"
                     Header="Monitor and cable details (optional)"
                     Margin="0,9,0,0">
@@ -703,6 +718,15 @@
                        Foreground="{StaticResource AccentBrush}"
                        Background="{StaticResource ControlPressedBrush}"
                        automation:AutomationProperties.Name="Connection recording progress" />
+          <TextBlock x:Name="RecordingWarningText"
+                     Margin="0,8,0,0"
+                     FontSize="12"
+                     Style="{StaticResource MutedTextStyle}"
+                     Foreground="{StaticResource WarningForegroundBrush}"
+                     TextWrapping="Wrap"
+                     Visibility="Collapsed"
+                     automation:AutomationProperties.Name="Selected monitor recording warning"
+                     automation:AutomationProperties.LiveSetting="Polite" />
           <TextBlock x:Name="RecordingStatusText"
                      Margin="0,8,0,0"
                      FontSize="12"

@@ -6,10 +6,50 @@ using System.Text.Json.Serialization;
 
 namespace OpenBlade.HdmiFix.Desktop;
 
-internal sealed record RecordingProgress(TimeSpan Elapsed, int Samples, int Blackouts, bool IsFinalizing = false);
+internal sealed record RecordingProgress(TimeSpan Elapsed, int Samples, int Blackouts, bool IsFinalizing = false,
+    bool? SelectedConnected = null, int SelectedCapturedSamples = 0,
+    int SelectedMissingSamples = 0, int SelectedUnverifiedSamples = 0)
+{
+    internal string Warning => IsFinalizing
+        ? new SelectedMonitorCoverage(SelectedCapturedSamples, SelectedMissingSamples, SelectedUnverifiedSamples).Warning
+        : Samples == 0
+        ? "Waiting for the first selected-monitor observation."
+        : SelectedConnected switch
+        {
+            true => "",
+            false => "Selected monitor is not being captured. No matching active connection was found. Other display information is still being recorded.",
+            null => "Selected monitor capture could not be verified. The display query failed or its connection match was incomplete or ambiguous. Other available display information is still being recorded.",
+        };
+}
+
+// These counts describe saved observations, not continuous connection coverage.
+internal sealed record SelectedMonitorCoverage(int Captured = 0, int Missing = 0, int Unverified = 0)
+{
+    internal SelectedMonitorCoverage Add(bool? connected) => connected switch
+    {
+        true => this with { Captured = Captured + 1 },
+        false => this with { Missing = Missing + 1 },
+        null => this with { Unverified = Unverified + 1 },
+    };
+
+    internal string Warning => Captured == 0
+        ? "The selected monitor was never captured in a verified saved sample. Its active connection and telemetry could not be verified."
+        : Missing != 0 || Unverified != 0
+            ? "Selected-monitor capture has gaps. Some saved samples did not capture it or could not verify its connection."
+            : "";
+
+    internal string Summary => string.Join(Environment.NewLine, new[]
+    {
+        $"Selected monitor captured samples: {Captured}",
+        $"Selected monitor not captured samples: {Missing}",
+        $"Selected monitor unverified samples: {Unverified}",
+        Warning.Length == 0 ? "The selected monitor was captured in every saved sample. This does not establish continuous coverage between samples."
+            : Warning,
+    });
+}
 
 internal sealed record ConnectionRecordingResult(
-    string DirectoryPath, string? BundlePath, bool Completed, string Message);
+    string DirectoryPath, string? BundlePath, bool Completed, string Message, string Warning = "");
 
 internal sealed class ConnectionRecording
 {
@@ -116,6 +156,8 @@ internal sealed class ConnectionRecording
         bool completed = false;
         string message;
         int samples = 0;
+        var coverage = new SelectedMonitorCoverage();
+        bool? selectedConnected = null;
         int timelineEntries = 0;
         bool timelineFull = false;
         TimeSpan recordedElapsed = TimeSpan.Zero;
@@ -140,7 +182,7 @@ internal sealed class ConnectionRecording
             using var writer = new StreamWriter(file, new UTF8Encoding(false), 4096, leaveOpen: true);
 
             AppendTimeline(writer, file, RecordingEntry.Start(startedUtc), ref timelineEntries, ref timelineFull);
-            Report(progress, 0);
+            Report(progress, 0, coverage, selectedConnected);
             while (!token.IsCancellationRequested && clock.Elapsed < duration && !timelineFull)
             {
                 DrainMarkers(writer, file, ref timelineEntries, ref timelineFull);
@@ -182,7 +224,9 @@ internal sealed class ConnectionRecording
                 if (AppendTimeline(writer, file, sample, ref timelineEntries, ref timelineFull))
                 {
                     samples++;
-                    Report(progress, samples);
+                    selectedConnected = sample.SelectedConnected;
+                    coverage = coverage.Add(selectedConnected);
+                    Report(progress, samples, coverage, selectedConnected);
                 }
 
                 TimeSpan next = TimeSpan.FromTicks(interval.Ticks
@@ -210,7 +254,7 @@ internal sealed class ConnectionRecording
                 finalMarkers = markers.ToArray();
                 markers.Clear();
             }
-            Report(progress, samples, finalizing: true);
+            Report(progress, samples, coverage, selectedConnected, finalizing: true);
             foreach (PendingMarker marker in finalMarkers)
             {
                 AppendTimeline(writer, file, RecordingEntry.Marker(marker), ref timelineEntries, ref timelineFull, final: true);
@@ -227,7 +271,7 @@ internal sealed class ConnectionRecording
                 .ConfigureAwait(false);
             WriteJsonDurably(Path.Combine(DirectoryPath, "events.json"), evidence);
             WriteDurableText(Path.Combine(DirectoryPath, "summary.txt"), BuildSummary(
-                completed, recordedElapsed, samples, timelineEntries, timelineFull, evidence));
+                completed, recordedElapsed, samples, timelineEntries, timelineFull, evidence, coverage));
             bundlePath = CreateBundle();
             message = completed
                 ? "Connection recording completed. The shareable bundle is ready."
@@ -252,7 +296,7 @@ internal sealed class ConnectionRecording
             sessionLock?.Dispose();
         }
 
-        return new(DirectoryPath, bundlePath, completed, message);
+        return new(DirectoryPath, bundlePath, completed, message, coverage.Warning);
     }
 
     private bool AddMarker(string kind)
@@ -511,7 +555,7 @@ internal sealed class ConnectionRecording
     }
 
     private string BuildSummary(bool completed, TimeSpan recordedElapsed, int samples, int timelineEntries,
-        bool timelineFull, EvidenceSummary evidence)
+        bool timelineFull, EvidenceSummary evidence, SelectedMonitorCoverage coverage)
     {
         int blackouts;
         int displayChanges;
@@ -529,6 +573,7 @@ internal sealed class ConnectionRecording
             $"Elapsed: {recordedElapsed.TotalSeconds:0.000} seconds",
             $"State: {(completed ? "Completed" : "Stopped")}",
             $"Live samples: {samples}",
+            coverage.Summary,
             $"Blackout markers: {blackouts}",
             $"Display-change markers: {displayChanges}",
             $"Device-change markers: {deviceChanges}",
@@ -595,7 +640,8 @@ internal sealed class ConnectionRecording
         stream.Flush(flushToDisk: true);
     }
 
-    private void Report(IProgress<RecordingProgress>? progress, int samples, bool finalizing = false)
+    private void Report(IProgress<RecordingProgress>? progress, int samples, SelectedMonitorCoverage coverage,
+        bool? selectedConnected, bool finalizing = false)
     {
         if (progress is null)
         {
@@ -603,7 +649,8 @@ internal sealed class ConnectionRecording
         }
         try
         {
-            progress.Report(new(clock?.Elapsed ?? TimeSpan.Zero, samples, acceptedBlackouts, finalizing));
+            progress.Report(new(clock?.Elapsed ?? TimeSpan.Zero, samples, acceptedBlackouts, finalizing,
+                selectedConnected, coverage.Captured, coverage.Missing, coverage.Unverified));
         }
         catch (Exception error) when (IsRecoverable(error))
         {

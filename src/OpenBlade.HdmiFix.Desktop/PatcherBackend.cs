@@ -133,7 +133,7 @@ public sealed class PatcherBackend : IPatcherBackend
                 ? StaleInternalPanel.Describe(view) : view).ToList();
         lastScan = views.OrderByDescending(v => v.CanPatch || v.CanRestore)
             .ThenBy(v => v.DisplayLabel, StringComparer.OrdinalIgnoreCase).ToArray();
-        return new(lastScan, string.Join(" ", notices));
+        return new(lastScan, string.Join(" ", notices), RecordingTargets.FromSnapshot(lastScan, diagnosticSnapshot.Live));
     }
 
     public async Task<OperationOutcome> ApplyAsync(MonitorView monitor, bool restore)

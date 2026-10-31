@@ -6,6 +6,7 @@ using Xunit;
 
 namespace OpenBlade.HdmiFix.Desktop.Tests;
 
+[Collection("Connection recording")]
 public sealed class RecordingRecoveryTests
 {
     [Fact]
@@ -264,6 +265,66 @@ public sealed class RecordingRecoveryTests
         }
         finally { Directory.Delete(link); }
     }
+
+    [Fact]
+    public void RecoveredCoverageCountsOnlyTheSanitizedDurablePrefixAndPreservesItsWarning()
+    {
+        using var output = new RecoveryDirectory();
+        string session = output.Abandon();
+        File.AppendAllText(Path.Combine(session, "timeline.jsonl"), SavedSample(false, 1000)
+            + SavedSample(null, 2000) + SavedSample(true, 3000) + "{torn}\r\n" + SavedSample(true, 4000));
+        var recovery = RecordingRecovery.Recover(output.Path);
+        var result = Assert.Single(recovery.Recordings);
+        string summary = ReadBundle(result.BundlePath!)["summary.txt"];
+        Assert.Contains("Live samples: 3", summary);
+        Assert.Contains("Selected monitor captured samples: 1", summary);
+        Assert.Contains("Selected monitor not captured samples: 1", summary);
+        Assert.Contains("Selected monitor unverified samples: 1", summary);
+        Assert.Contains("gaps", result.Warning);
+        Assert.Contains(result.Warning, summary);
+        Assert.Contains(result.Warning, recovery.Warning);
+        Assert.Contains("Recovered recording:", recovery.Warning);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(null)]
+    public void RecoveryDoesNotClaimSelectedCaptureFromMissingOrUnknownSamples(bool? connected)
+    {
+        using var output = new RecoveryDirectory();
+        string session = output.Abandon();
+        File.AppendAllText(Path.Combine(session, "timeline.jsonl"), SavedSample(connected, 1000));
+        var result = Assert.Single(RecordingRecovery.Recover(output.Path).Recordings);
+        string summary = ReadBundle(result.BundlePath!)["summary.txt"];
+        Assert.Contains("Selected monitor captured samples: 0", summary);
+        Assert.Contains("never captured", result.Warning);
+        Assert.DoesNotContain("every saved sample", summary);
+    }
+
+    [Fact]
+    public void RecoveryWithNoSavedSamplesWarnsWithoutInventingCoverage()
+    {
+        using var output = new RecoveryDirectory();
+        output.Abandon();
+        var result = Assert.Single(RecordingRecovery.Recover(output.Path).Recordings);
+        string summary = ReadBundle(result.BundlePath!)["summary.txt"];
+        Assert.Contains("Live samples: 0", summary);
+        Assert.Contains("Selected monitor captured samples: 0", summary);
+        Assert.Contains("Selected monitor not captured samples: 0", summary);
+        Assert.Contains("Selected monitor unverified samples: 0", summary);
+        Assert.Contains("never captured", result.Warning);
+        Assert.DoesNotContain("every saved sample", summary);
+    }
+
+    private static string SavedSample(bool? connected, int elapsed) => JsonSerializer.Serialize(new
+    {
+        kind = "sample",
+        utc = new DateTime(2026, 10, 14, 0, 0, 0, DateTimeKind.Utc).AddMilliseconds(elapsed),
+        elapsedMilliseconds = elapsed,
+        status = connected is null ? "Unavailable" : "Available",
+        selectedConnected = connected,
+        displays = Array.Empty<object>(),
+    }) + "\r\n";
 
     private static string Entry(string kind, int elapsed) => JsonSerializer.Serialize(new
     {

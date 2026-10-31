@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Automation.Peers;
 using System.Windows.Interop;
 
 namespace OpenBlade.HdmiFix.Desktop;
@@ -13,9 +14,13 @@ public partial class MainWindow : Window
     private readonly IPatcherBackend _backend;
     private readonly bool _previewMode;
     private readonly string _recordingRoot;
+    private readonly Func<MonitorView, string, string, ConnectionRecording> _createRecording;
     private readonly TaskCompletionSource _initialScanCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _isBusy;
     private MonitorView? _selectedMonitor;
+    private IReadOnlyList<MonitorView> _activeRecordingTargets = [];
+    private bool _settingRecordingTargets;
+    private bool _recordingTargetWasExplicitlyChosen;
     private ConnectionRecording? _recording;
     private CancellationTokenSource? _recordingCancellation;
     private string? _lastRecordingDirectory;
@@ -29,10 +34,12 @@ public partial class MainWindow : Window
     {
     }
 
-    internal MainWindow(IPatcherBackend backend, bool previewMode, string recordingRoot)
+    internal MainWindow(IPatcherBackend backend, bool previewMode, string recordingRoot,
+        Func<MonitorView, string, string, ConnectionRecording>? createRecording = null)
     {
         ArgumentNullException.ThrowIfNull(backend);
         _recordingRoot = recordingRoot;
+        _createRecording = createRecording ?? ((monitor, report, root) => new(monitor, report, root));
         _backend = backend;
         _previewMode = previewMode;
         InitializeComponent();
@@ -65,6 +72,7 @@ public partial class MainWindow : Window
         StopRecordingButton.Visibility = Visibility.Visible;
         RecordingProgressBar.Visibility = Visibility.Visible;
         RecordingProgressBar.Value = 23;
+        SetRecordingWarning(new RecordingProgress(TimeSpan.FromSeconds(23), 46, 2, SelectedConnected: false).Warning);
         RecordingStatusText.Text = "Recording: 37 seconds left · 46 samples · 2 blackout marks.";
         UpdateLayout();
         RecordingCard.BringIntoView();
@@ -110,6 +118,7 @@ public partial class MainWindow : Window
             }
             if (!string.IsNullOrWhiteSpace(recovery.Message))
                 RecordingStatusText.Text = recovery.Message;
+            SetRecordingWarning(recovery.Warning);
             return recovery.Message;
         }
         catch (Exception error) when (PatcherBackend.IsExpected(error))
@@ -133,11 +142,13 @@ public partial class MainWindow : Window
         try
         {
             MonitorScan scan = await _backend.ScanAsync();
+            _activeRecordingTargets = scan.RecordingTargets ?? [];
             MonitorSelector.ItemsSource = scan.Monitors;
 
             MonitorView? selection = scan.Monitors.FirstOrDefault(
                 monitor => string.Equals(monitor.InstanceId, preferredInstanceId, StringComparison.OrdinalIgnoreCase));
             MonitorSelector.SelectedItem = selection ?? scan.Monitors.FirstOrDefault();
+            UpdateRecordingTargets();
 
             string status = string.IsNullOrWhiteSpace(completionMessage)
                 ? scan.Message
@@ -151,6 +162,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            _activeRecordingTargets = [];
             MonitorSelector.ItemsSource = Array.Empty<MonitorView>();
             MonitorSelector.SelectedItem = null;
             ShowMonitor(null);
@@ -256,14 +268,35 @@ public partial class MainWindow : Window
 
     private async void RecordConnectionButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_isBusy || _recording is not null || _selectedMonitor is null || _previewMode) return;
-        MonitorView selected = _selectedMonitor;
+        if (_isBusy || _recording is not null || _previewMode
+            || RecordingTargetSelector.SelectedItem is not RecordingTargetChoice requested) return;
+        bool explicitChoice = _recordingTargetWasExplicitlyChosen;
+        // Refresh the read-only snapshot before starting: reconnecting can create
+        // a different Windows instance while the old saved selection remains.
+        await RefreshAsync();
+        var choices = RecordingTargetSelector.ItemsSource as IReadOnlyList<RecordingTargetChoice> ?? [];
+        var current = choices.FirstOrDefault(c => c.Monitor.InstanceId.Equals(requested.Monitor.InstanceId,
+            StringComparison.OrdinalIgnoreCase));
+        if (current is null || (requested.IsActive && !current.IsActive)
+            || (!current.IsActive && !explicitChoice && choices.Any(c => c.IsActive)))
+        {
+            RecordingStatusText.Text = "Choose the connected HDMI monitor below, then start recording.";
+            RecordingCard.BringIntoView();
+            RecordingTargetSelector.Focus();
+            return;
+        }
+        _settingRecordingTargets = true;
+        RecordingTargetSelector.SelectedItem = current;
+        _settingRecordingTargets = false;
+        _recordingTargetWasExplicitlyChosen = explicitChoice;
+        UpdateRecordingTargetHint();
+        MonitorView selected = current.Monitor;
         ConnectionRecording recording;
         try
         {
             string context = FormatRecordingContext(RecordingModelText.Text, RecordingFirmwareText.Text, RecordingCableText.Text,
                 (RecordingAdaptiveSyncSelector.SelectedItem as ComboBoxItem)?.Tag as string);
-            recording = new ConnectionRecording(selected, _backend.DiagnosticText(selected) + context, _recordingRoot);
+            recording = _createRecording(selected, _backend.DiagnosticText(selected) + context, _recordingRoot);
         }
         catch (Exception ex) when (ex is not (OutOfMemoryException or StackOverflowException or AccessViolationException))
         {
@@ -277,11 +310,12 @@ public partial class MainWindow : Window
         _recordingReady = false;
         _lastRecordingDirectory = null;
         RecordingProgressBar.Value = 0;
+        SetRecordingWarning(new RecordingProgress(TimeSpan.Zero, 0, 0).Warning);
         RecordingProgressBar.Visibility = Visibility.Visible;
         MarkBlackoutButton.Visibility = Visibility.Visible;
         StopRecordingButton.Visibility = Visibility.Visible;
         OpenRecordingButton.Visibility = Visibility.Collapsed;
-        RecordingStatusText.Text = "Preparing the recording. Keep the monitor unplugged until recording starts.";
+        RecordingStatusText.Text = "Preparing the recording. Leave an already connected monitor connected.";
         UpdateActionStates();
         RecordConnectionButton.Visibility = Visibility.Collapsed;
         RecordingCard.BringIntoView();
@@ -290,6 +324,7 @@ public partial class MainWindow : Window
         {
             if (!ReferenceEquals(_recording, recording) || _finishingRecording) return;
             _recordingReady = true;
+            SetRecordingWarning(value.Warning);
             if (value.IsFinalizing)
             {
                 _finishingRecording = true;
@@ -310,6 +345,7 @@ public partial class MainWindow : Window
             ConnectionRecordingResult result = await Task.Run(() => recording.RunAsync(cancellation.Token, progress));
             _lastRecordingDirectory = result.DirectoryPath;
             RecordingStatusText.Text = result.Message;
+            SetRecordingWarning(result.Warning);
             OpenRecordingButton.Visibility = Directory.Exists(_lastRecordingDirectory) ? Visibility.Visible : Visibility.Collapsed;
         }
         catch (Exception ex) when (ex is not (OutOfMemoryException or StackOverflowException or AccessViolationException))
@@ -329,6 +365,46 @@ public partial class MainWindow : Window
             RecordingProgressBar.Visibility = Visibility.Collapsed;
             UpdateActionStates();
             if (_closeAfterRecording) Close();
+        }
+    }
+
+    private void UpdateRecordingTargets()
+    {
+        var choices = RecordingTargets.Choices(_selectedMonitor, _activeRecordingTargets);
+        _settingRecordingTargets = true;
+        RecordingTargetSelector.ItemsSource = choices;
+        RecordingTargetSelector.SelectedItem = RecordingTargets.Default(_selectedMonitor, choices);
+        _settingRecordingTargets = false;
+        _recordingTargetWasExplicitlyChosen = false;
+        UpdateRecordingTargetHint();
+    }
+
+    private void RecordingTargetSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_settingRecordingTargets) return;
+        _recordingTargetWasExplicitlyChosen = true;
+        UpdateRecordingTargetHint();
+        UpdateActionStates();
+    }
+
+    private void UpdateRecordingTargetHint()
+    {
+        RecordingTargetHintText.Text = RecordingTargetSelector.SelectedItem is null
+            ? "No active connection matches the saved selection. Choose the connected HDMI monitor, or choose the saved connection to wait for it."
+            : "Recording uses this connection only. Patch and Restore use the saved monitor above.";
+    }
+
+    private void SetRecordingWarning(string warning)
+    {
+        // Repeated samples keep the same warning; announce only a changed message.
+        if (RecordingWarningText.Text == warning) return;
+        RecordingWarningText.Text = warning;
+        RecordingWarningText.Visibility = warning.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        if (warning.Length != 0)
+        {
+            AutomationPeer? peer = UIElementAutomationPeer.FromElement(RecordingWarningText)
+                ?? UIElementAutomationPeer.CreatePeerForElement(RecordingWarningText);
+            peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
         }
     }
 
@@ -412,6 +488,7 @@ public partial class MainWindow : Window
         ValidationWarningBorder.Visibility = string.IsNullOrWhiteSpace(ValidationWarningText.Text)
             ? Visibility.Collapsed : Visibility.Visible;
         DiagnosticsText.Text = _backend.DiagnosticText(monitor);
+        UpdateRecordingTargets();
         UpdateActionStates();
     }
 
@@ -454,7 +531,9 @@ public partial class MainWindow : Window
         RestoreButton.Style = restorePreferred ? primary : secondary;
         MonitorSelector.IsEnabled = idle;
         RecordingContextExpander.IsEnabled = idle;
-        RecordConnectionButton.IsEnabled = idle && !_previewMode && _selectedMonitor is not null;
+        RecordingTargetSelector.IsEnabled = idle;
+        RecordingTargetHintText.Visibility = recording ? Visibility.Collapsed : Visibility.Visible;
+        RecordConnectionButton.IsEnabled = idle && !_previewMode && RecordingTargetSelector.SelectedItem is RecordingTargetChoice;
         MarkBlackoutButton.IsEnabled = recording && _recordingReady && !_finishingRecording;
         StopRecordingButton.IsEnabled = recording && !_finishingRecording;
         PatchButton.IsEnabled = canMutate && _selectedMonitor!.CanPatch;
