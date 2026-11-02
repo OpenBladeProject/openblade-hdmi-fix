@@ -15,6 +15,8 @@ public sealed class RecordingPreflightWindowTests
     {
         var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Dispatcher? dispatcher = null;
+        string phase = "Starting STA dispatcher";
+        void SetPhase(string value) => Volatile.Write(ref phase, value);
         var thread = new Thread(() =>
         {
             Exception? failure = null;
@@ -24,6 +26,7 @@ public sealed class RecordingPreflightWindowTests
             try
             {
                 dispatcher = Dispatcher.CurrentDispatcher;
+                SetPhase("Initializing WPF application");
                 app = new App();
                 app.InitializeComponent();
                 app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -31,20 +34,20 @@ public sealed class RecordingPreflightWindowTests
                 {
                     try
                     {
+                        SetPhase("Constructing WPF window");
                         var backend = new ControlledBackend(root);
                         int recorderCalls = 0;
                         window = new MainWindow(backend, false, root, (_, _, _) =>
                         {
                             recorderCalls++;
                             throw new InvalidOperationException("A blocked preflight must not create a recorder.");
-                        })
-                        {
-                            ShowActivated = false,
-                            ShowInTaskbar = false,
-                            Opacity = 0,
-                        };
-                        window.Show();
+                        });
+                        // Exercise the real Loaded handler without creating an HWND or
+                        // depending on desktop composition in a headless CI session.
+                        SetPhase("Waiting for initial Loaded scan");
+                        window.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent, window));
                         await window.InitialScanCompleted;
+                        SetPhase("Checking initial control state");
 
                         var savedSelector = Control<ComboBox>(window, "MonitorSelector");
                         var targetSelector = Control<ComboBox>(window, "RecordingTargetSelector");
@@ -58,9 +61,11 @@ public sealed class RecordingPreflightWindowTests
                         targetSelector.SelectedItem = targetSelector.Items.Cast<RecordingTargetChoice>().Single(c => c.IsActive);
                         Assert.True(record.IsEnabled);
 
+                        SetPhase("Starting failed recording preflight");
                         record.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                         Assert.Equal(2, backend.Scans);
-                        await CompleteScanAsync(targetSelector, () => backend.Preflight.SetException(new IOException("Synthetic saved scan failure")));
+                        await CompleteScanAsync(targetSelector, () => backend.Preflight.SetException(new IOException("Synthetic saved scan failure")), stage => SetPhase("Failed preflight: " + stage));
+                        SetPhase("Checking failed preflight control state");
                         Assert.Equal(0, recorderCalls);
                         Assert.Equal(ControlledBackend.SavedId, Assert.IsType<MonitorView>(savedSelector.SelectedItem).InstanceId);
                         Assert.False(patch.IsEnabled);
@@ -68,9 +73,11 @@ public sealed class RecordingPreflightWindowTests
                         Assert.Contains("saved monitor information", recordingStatus.Text, StringComparison.OrdinalIgnoreCase);
                         Assert.Contains("Refresh", recordingStatus.Text, StringComparison.Ordinal);
 
+                        SetPhase("Starting recovery refresh");
                         Control<Button>(window, "RefreshButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                         Assert.Equal(3, backend.Scans);
-                        await CompleteScanAsync(targetSelector, () => backend.Recovery.SetResult(ControlledBackend.RecoveredScan()));
+                        await CompleteScanAsync(targetSelector, () => backend.Recovery.SetResult(ControlledBackend.RecoveredScan()), stage => SetPhase("Recovery refresh: " + stage));
+                        SetPhase("Checking recovered saved-wait control state");
                         var choice = Assert.IsType<RecordingTargetChoice>(targetSelector.SelectedItem);
                         Assert.False(choice.IsActive);
                         Assert.Equal(ControlledBackend.SavedId, choice.Monitor.InstanceId);
@@ -87,6 +94,7 @@ public sealed class RecordingPreflightWindowTests
                     catch (Exception error) { failure = error; }
                     finally
                     {
+                        SetPhase("Closing WPF window and application");
                         window?.Close();
                         app.Shutdown();
                         Dispatcher.CurrentDispatcher.InvokeShutdown();
@@ -99,6 +107,7 @@ public sealed class RecordingPreflightWindowTests
             {
                 try
                 {
+                    SetPhase("Removing temporary recording directory");
                     if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
                 }
                 catch (Exception error) { failure ??= error; }
@@ -109,6 +118,10 @@ public sealed class RecordingPreflightWindowTests
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         try { await completed.Task.WaitAsync(TimeSpan.FromSeconds(30)); }
+        catch (TimeoutException error)
+        {
+            throw new TimeoutException($"WPF preflight regression timed out during: {Volatile.Read(ref phase)}.", error);
+        }
         finally
         {
             if (!completed.Task.IsCompleted && dispatcher is not null)
@@ -119,7 +132,7 @@ public sealed class RecordingPreflightWindowTests
     private static T Control<T>(Window window, string name) where T : FrameworkElement =>
         Assert.IsType<T>(window.FindName(name));
 
-    private static async Task CompleteScanAsync(ComboBox selector, Action complete)
+    private static async Task CompleteScanAsync(ComboBox selector, Action complete, Action<string> reportPhase)
     {
         Assert.False(selector.IsEnabled);
         var enabled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -131,8 +144,10 @@ public sealed class RecordingPreflightWindowTests
         descriptor.AddValueChanged(selector, changed);
         try
         {
+            reportPhase("waiting for selector re-enable");
             complete();
             await enabled.Task;
+            reportPhase("waiting for click handler completion at dispatcher idle");
             // SetBusy ends before the async click handler updates its result text.
             await selector.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
         }
