@@ -51,17 +51,31 @@ internal static class RecordingTargets
         saved is null ? null : choices.FirstOrDefault(c => c.IsActive && c.Monitor.InstanceId.Equals(saved.InstanceId,
             StringComparison.OrdinalIgnoreCase)) ?? (choices.Any(c => c.IsActive) ? null : choices.FirstOrDefault());
 
+    internal static bool CanWaitForSaved(RecordingTargetChoice requested, RecordingTargetChoice? current,
+        bool explicitChoice, bool hasActiveChoices) => !requested.IsActive && current is { IsActive: false }
+            && requested.Monitor.InstanceId.Equals(current.Monitor.InstanceId, StringComparison.OrdinalIgnoreCase)
+            && (explicitChoice || !hasActiveChoices);
+
     internal static string ReadFailure(LiveDisplayScan live) => live.Failure.Length != 0
         ? DiagnosticValues.Status(live.Failure) : live.HasUnresolvedPaths ? "BindingIncomplete" : "";
 
-    internal static string FailureMessage(string failure) => failure == "LiveCapture:Busy"
+    internal static string FailureMessage(string failure) => failure == "Scan:Unavailable"
+        ? "The app couldn't refresh saved monitor information. Select Refresh to try again."
+        : failure == "LiveCapture:Busy"
         ? "A previous display read is still finishing. Wait a moment, then select Refresh."
         : "The app couldn't check active HDMI connections. Select Refresh to try again.";
 
     internal static string Hint(MonitorView? saved, IReadOnlyList<RecordingTargetChoice> choices,
         RecordingTargetChoice? selected, string failure)
     {
-        if (selected?.IsActive != true && failure.Length != 0) return FailureMessage(failure);
+        if (selected?.IsActive != true && failure.Length != 0)
+        {
+            if (selected is not null && failure != "Scan:Unavailable")
+                return FailureMessage(failure) + " You can start recording to wait for this saved connection.";
+            if (choices.Any(c => c.IsActive))
+                return "Some connections could not be checked. Choose a listed connected HDMI monitor, or select Refresh.";
+            return FailureMessage(failure);
+        }
         if (choices.Count == 0)
             return "No monitor connections are available for recording. Select Refresh to check again.";
         if (selected is null)

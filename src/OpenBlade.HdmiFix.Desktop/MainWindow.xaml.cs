@@ -173,7 +173,8 @@ public partial class MainWindow : Window
             _recordingTargetFailure = "Scan:Unavailable";
             _activeRecordingTargets = [];
             UpdateRecordingTargets();
-            SetStatus($"OpenBlade could not scan saved monitors: {ex.Message} Select Refresh to try again.");
+            string failure = $"OpenBlade could not scan saved monitors: {ex.Message} Select Refresh to try again.";
+            SetStatus(string.IsNullOrWhiteSpace(completionMessage) ? failure : $"{completionMessage} {failure}");
             return false;
         }
         finally
@@ -291,7 +292,9 @@ public partial class MainWindow : Window
         var choices = RecordingTargetSelector.ItemsSource as IReadOnlyList<RecordingTargetChoice> ?? [];
         var current = choices.FirstOrDefault(c => c.Monitor.InstanceId.Equals(requested.Monitor.InstanceId,
             StringComparison.OrdinalIgnoreCase));
-        if (current?.IsActive != true && _recordingTargetFailure.Length != 0)
+        bool waitingForSaved = RecordingTargets.CanWaitForSaved(requested, current,
+            explicitChoice, choices.Any(c => c.IsActive));
+        if (current?.IsActive != true && _recordingTargetFailure.Length != 0 && !waitingForSaved)
         {
             _recordingPreflightFailed = true;
             RecordingStatusText.Text = RecordingTargets.FailureMessage(_recordingTargetFailure);
@@ -423,7 +426,8 @@ public partial class MainWindow : Window
         {
             _recordingPreflightFailed = false;
             RecordingStatusText.Text = choices.Count == 0 ? RecordingTargetHintText.Text
-                : "Monitor connections refreshed. Choose the monitor to record.";
+                : RecordingTargetSelector.SelectedItem is null ? "Choose the monitor to record."
+                : "Ready to record the selected connection.";
         }
     }
 

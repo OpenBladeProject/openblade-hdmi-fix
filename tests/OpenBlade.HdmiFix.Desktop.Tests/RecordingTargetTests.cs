@@ -137,6 +137,43 @@ public sealed class RecordingTargetTests
         Assert.DoesNotContain("Refresh", RecordingTargets.Hint(Monitor(Old), [active], active, "BindingIncomplete"));
     }
 
+    [Theory]
+    [InlineData(false, false, true)]
+    [InlineData(true, true, true)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, true)]
+    public void WaitingRetainsTheRequestedSavedInstance(bool explicitChoice, bool activeAlternatives, bool allowed)
+    {
+        var requested = new RecordingTargetChoice(Monitor(Old), false);
+        Assert.Equal(allowed, RecordingTargets.CanWaitForSaved(requested, requested, explicitChoice, activeAlternatives));
+    }
+
+    [Fact]
+    public void ActiveOrDifferentTargetsCannotSilentlyBecomeASavedWaitTarget()
+    {
+        var saved = new RecordingTargetChoice(Monitor(Old), false);
+        Assert.False(RecordingTargets.CanWaitForSaved(saved with { IsActive = true }, saved, true, false));
+        Assert.False(RecordingTargets.CanWaitForSaved(saved, new(Monitor(Live), false), true, false));
+    }
+
+    [Fact]
+    public void PartialQueryHintsOfferVerifiedChoicesOrTheSelectedSavedWait()
+    {
+        var active = new RecordingTargetChoice(Monitor(Live), true);
+        Assert.Contains("listed connected", RecordingTargets.Hint(Monitor(Old), [active], null, "BindingIncomplete"));
+        var saved = new RecordingTargetChoice(Monitor(Old), false);
+        Assert.Contains("start recording to wait", RecordingTargets.Hint(Monitor(Old), [active, saved], saved, "BindingIncomplete"));
+    }
+
+    [Fact]
+    public void SavedScanErrorsDoNotClaimToBeAnHdmiQueryFailure()
+    {
+        Assert.Contains("saved monitor", RecordingTargets.FailureMessage("Scan:Unavailable"));
+        Assert.DoesNotContain("HDMI", RecordingTargets.FailureMessage("Scan:Unavailable"));
+        var saved = new RecordingTargetChoice(Monitor(Old), false);
+        Assert.DoesNotContain("start recording", RecordingTargets.Hint(Monitor(Old), [saved], saved, "Scan:Unavailable"));
+    }
+
     private static MonitorView Monitor(string id) => new(id, "Odyssey G95C", "Previously connected", "Connection OLD",
         "Saved entry", "", false, false, null);
     private static LiveDisplayDiagnostics Display(string id) => new(id, "Odyssey G95C", "5120 x 1440, 240 Hz",
