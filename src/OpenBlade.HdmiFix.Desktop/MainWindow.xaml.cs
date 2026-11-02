@@ -421,13 +421,17 @@ public partial class MainWindow : Window
         var choices = RecordingTargetSelector.ItemsSource as IReadOnlyList<RecordingTargetChoice> ?? [];
         RecordingTargetHintText.Text = RecordingTargets.Hint(_selectedMonitor, choices,
             RecordingTargetSelector.SelectedItem as RecordingTargetChoice, _recordingTargetFailure);
-        if (_recordingPreflightFailed && (_recordingTargetFailure.Length == 0
-            || RecordingTargetSelector.SelectedItem is RecordingTargetChoice { IsActive: true }))
+        var selected = RecordingTargetSelector.SelectedItem as RecordingTargetChoice;
+        bool ready = _savedScanCurrent && (selected?.IsActive == true
+            || selected is not null && RecordingTargets.CanWaitForSaved(selected, selected,
+                _recordingTargetWasExplicitlyChosen, choices.Any(c => c.IsActive)));
+        if (_recordingPreflightFailed && (_recordingTargetFailure.Length == 0 || ready))
         {
             _recordingPreflightFailed = false;
             RecordingStatusText.Text = choices.Count == 0 ? RecordingTargetHintText.Text
-                : RecordingTargetSelector.SelectedItem is null ? "Choose the monitor to record."
-                : "Ready to record the selected connection.";
+                : selected is null ? "Choose the monitor to record."
+                : selected.IsActive ? "Ready to record the selected connection."
+                : "Ready to record and wait for readable data from this saved connection.";
         }
     }
 

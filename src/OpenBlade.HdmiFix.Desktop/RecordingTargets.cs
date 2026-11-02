@@ -71,7 +71,7 @@ internal static class RecordingTargets
         if (selected?.IsActive != true && failure.Length != 0)
         {
             if (selected is not null && failure != "Scan:Unavailable")
-                return FailureMessage(failure) + " You can start recording to wait for this saved connection.";
+                return FailureMessage(failure) + " Or start recording to wait for readable data from this saved connection.";
             if (choices.Any(c => c.IsActive))
                 return "Some connections could not be checked. Choose a listed connected HDMI monitor, or select Refresh.";
             return FailureMessage(failure);
