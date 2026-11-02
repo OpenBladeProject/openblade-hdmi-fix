@@ -12,7 +12,7 @@ public sealed record MonitorView(
 }
 
 public sealed record MonitorScan(IReadOnlyList<MonitorView> Monitors, string Message,
-    IReadOnlyList<MonitorView>? RecordingTargets = null);
+    IReadOnlyList<MonitorView>? RecordingTargets = null, string RecordingTargetFailure = "");
 public sealed record OperationOutcome(bool Success, string Message);
 
 public interface IPatcherBackend

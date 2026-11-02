@@ -77,6 +77,66 @@ public sealed class RecordingTargetTests
         Assert.Equal(Live, target.InstanceId);
     }
 
+    [Theory]
+    [InlineData("Unknown")]
+    [InlineData("unknown")]
+    [InlineData("UNKNOWN")]
+    [InlineData("")]
+    public void UnknownLiveNameRetainsExactSavedFriendlyName(string name)
+    {
+        var saved = Monitor(Live);
+        var target = Assert.Single(RecordingTargets.FromSnapshot([saved], new([Display(Live) with { MonitorName = name }])));
+        Assert.Equal(saved.Name, target.Name);
+    }
+
+    [Fact]
+    public void AUsableLiveNameIsStillDisplayed()
+    {
+        var target = Assert.Single(RecordingTargets.FromSnapshot([Monitor(Live)],
+            new([Display(Live) with { MonitorName = "Current display name" }])));
+        Assert.Equal("Current display name", target.Name);
+    }
+
+    [Theory]
+    [InlineData("LiveCapture:Busy", false, "LiveCapture:Busy")]
+    [InlineData("Topology:Unavailable", false, "Topology:Unavailable")]
+    [InlineData("", true, "BindingIncomplete")]
+    [InlineData("", false, "")]
+    public void SnapshotFailureIsDistinctFromAnEmptyHealthyTopology(string failure, bool unresolved, string expected)
+    {
+        Assert.Equal(expected, RecordingTargets.ReadFailure(new([], failure, unresolved)));
+    }
+
+    [Fact]
+    public void FailedQueryHintOffersRefreshInsteadOfAnUnavailableSelection()
+    {
+        string hint = RecordingTargets.Hint(Monitor(Old), [], null, "LiveCapture:Busy");
+        Assert.Contains("still finishing", hint);
+        Assert.Contains("Refresh", hint);
+        Assert.DoesNotContain("Choose", hint);
+        Assert.Contains("couldn't check", RecordingTargets.Hint(null, [], null, "Topology:Unavailable"));
+    }
+
+    [Fact]
+    public void EmptyAndActiveOnlyHintsDoNotInventASavedSelection()
+    {
+        var active = new RecordingTargetChoice(Monitor(Live), true);
+        string empty = RecordingTargets.Hint(null, [], null, "");
+        Assert.Contains("No monitor connections", empty);
+        Assert.DoesNotContain("saved selection", empty);
+        Assert.DoesNotContain("Choose", empty);
+        Assert.Equal("Choose a connected HDMI monitor to record.", RecordingTargets.Hint(null, [active], null, ""));
+        Assert.DoesNotContain("saved", RecordingTargets.Hint(null, [active], active, ""));
+    }
+
+    [Fact]
+    public void AnUnrelatedPathFailureDoesNotOverrideTheVerifiedActiveTargetHint()
+    {
+        var active = new RecordingTargetChoice(Monitor(Live), true);
+        Assert.DoesNotContain("couldn't check", RecordingTargets.Hint(Monitor(Old), [active], active, "BindingIncomplete"));
+        Assert.DoesNotContain("Refresh", RecordingTargets.Hint(Monitor(Old), [active], active, "BindingIncomplete"));
+    }
+
     private static MonitorView Monitor(string id) => new(id, "Odyssey G95C", "Previously connected", "Connection OLD",
         "Saved entry", "", false, false, null);
     private static LiveDisplayDiagnostics Display(string id) => new(id, "Odyssey G95C", "5120 x 1440, 240 Hz",
