@@ -21,6 +21,9 @@ public partial class MainWindow : Window
     private IReadOnlyList<MonitorView> _activeRecordingTargets = [];
     private bool _settingRecordingTargets;
     private bool _recordingTargetWasExplicitlyChosen;
+    private string _recordingTargetFailure = "";
+    private bool _savedScanCurrent;
+    private bool _recordingPreflightFailed;
     private ConnectionRecording? _recording;
     private CancellationTokenSource? _recordingCancellation;
     private string? _lastRecordingDirectory;
@@ -129,11 +132,11 @@ public partial class MainWindow : Window
         finally { SetBusy(false); }
     }
 
-    private async Task RefreshAsync(string? preferredInstanceId = null, string? completionMessage = null)
+    private async Task<bool> RefreshAsync(string? preferredInstanceId = null, string? completionMessage = null)
     {
         if (_isBusy || _recording is not null)
         {
-            return;
+            return false;
         }
 
         preferredInstanceId ??= _selectedMonitor?.InstanceId;
@@ -142,6 +145,8 @@ public partial class MainWindow : Window
         try
         {
             MonitorScan scan = await _backend.ScanAsync();
+            _savedScanCurrent = true;
+            _recordingTargetFailure = scan.RecordingTargetFailure;
             _activeRecordingTargets = scan.RecordingTargets ?? [];
             MonitorSelector.ItemsSource = scan.Monitors;
 
@@ -159,14 +164,18 @@ public partial class MainWindow : Window
             {
                 ShowMonitor(null);
             }
+            return true;
         }
         catch (Exception ex)
         {
+            // Retain presentation, but do not admit mutation until a saved scan succeeds.
+            _savedScanCurrent = false;
+            _recordingTargetFailure = "Scan:Unavailable";
             _activeRecordingTargets = [];
-            MonitorSelector.ItemsSource = Array.Empty<MonitorView>();
-            MonitorSelector.SelectedItem = null;
-            ShowMonitor(null);
-            SetStatus($"OpenBlade could not scan saved monitors: {ex.Message} Select Refresh to try again.");
+            UpdateRecordingTargets();
+            string failure = $"OpenBlade could not scan saved monitors: {ex.Message} Select Refresh to try again.";
+            SetStatus(string.IsNullOrWhiteSpace(completionMessage) ? failure : $"{completionMessage} {failure}");
+            return false;
         }
         finally
         {
@@ -273,14 +282,33 @@ public partial class MainWindow : Window
         bool explicitChoice = _recordingTargetWasExplicitlyChosen;
         // Refresh the read-only snapshot before starting: reconnecting can create
         // a different Windows instance while the old saved selection remains.
-        await RefreshAsync();
+        if (!await RefreshAsync())
+        {
+            _recordingPreflightFailed = true;
+            RecordingStatusText.Text = RecordingTargets.FailureMessage(_recordingTargetFailure);
+            RecordingCard.BringIntoView();
+            return;
+        }
         var choices = RecordingTargetSelector.ItemsSource as IReadOnlyList<RecordingTargetChoice> ?? [];
         var current = choices.FirstOrDefault(c => c.Monitor.InstanceId.Equals(requested.Monitor.InstanceId,
             StringComparison.OrdinalIgnoreCase));
+        bool waitingForSaved = RecordingTargets.CanWaitForSaved(requested, current,
+            explicitChoice, choices.Any(c => c.IsActive));
+        if (current?.IsActive != true && _recordingTargetFailure.Length != 0 && !waitingForSaved)
+        {
+            _recordingPreflightFailed = true;
+            RecordingStatusText.Text = RecordingTargets.FailureMessage(_recordingTargetFailure);
+            RecordingCard.BringIntoView();
+            return;
+        }
         if (current is null || (requested.IsActive && !current.IsActive)
             || (!current.IsActive && !explicitChoice && choices.Any(c => c.IsActive)))
         {
-            RecordingStatusText.Text = "Choose the connected HDMI monitor below, then start recording.";
+            _recordingPreflightFailed = true;
+            RecordingStatusText.Text = choices.Count == 0
+                ? RecordingTargets.Hint(_selectedMonitor, choices, null, "")
+                : choices.Any(c => c.IsActive) ? "Choose a listed connected HDMI monitor, then start recording."
+                : "The selected HDMI connection is not active. Select Refresh, or choose a saved connection and start recording to wait for it.";
             RecordingCard.BringIntoView();
             RecordingTargetSelector.Focus();
             return;
@@ -290,6 +318,7 @@ public partial class MainWindow : Window
         _settingRecordingTargets = false;
         _recordingTargetWasExplicitlyChosen = explicitChoice;
         UpdateRecordingTargetHint();
+        _recordingPreflightFailed = false;
         MonitorView selected = current.Monitor;
         ConnectionRecording recording;
         try
@@ -389,9 +418,21 @@ public partial class MainWindow : Window
 
     private void UpdateRecordingTargetHint()
     {
-        RecordingTargetHintText.Text = RecordingTargetSelector.SelectedItem is null
-            ? "No active connection matches the saved selection. Choose the connected HDMI monitor, or choose the saved connection to wait for it."
-            : "Recording uses this connection only. Patch and Restore use the saved monitor above.";
+        var choices = RecordingTargetSelector.ItemsSource as IReadOnlyList<RecordingTargetChoice> ?? [];
+        RecordingTargetHintText.Text = RecordingTargets.Hint(_selectedMonitor, choices,
+            RecordingTargetSelector.SelectedItem as RecordingTargetChoice, _recordingTargetFailure);
+        var selected = RecordingTargetSelector.SelectedItem as RecordingTargetChoice;
+        bool ready = _savedScanCurrent && (selected?.IsActive == true
+            || selected is not null && RecordingTargets.CanWaitForSaved(selected, selected,
+                _recordingTargetWasExplicitlyChosen, choices.Any(c => c.IsActive)));
+        if (_recordingPreflightFailed && (_recordingTargetFailure.Length == 0 || ready))
+        {
+            _recordingPreflightFailed = false;
+            RecordingStatusText.Text = choices.Count == 0 ? RecordingTargetHintText.Text
+                : selected is null ? "Choose the monitor to record."
+                : selected.IsActive ? "Ready to record the selected connection."
+                : "Ready to record and wait for readable data from this saved connection.";
+        }
     }
 
     private void SetRecordingWarning(string warning)
@@ -523,7 +564,7 @@ public partial class MainWindow : Window
     {
         bool recording = _recording is not null;
         bool idle = !_isBusy && !recording;
-        bool canMutate = idle && !_previewMode && _selectedMonitor is not null;
+        bool canMutate = idle && !_previewMode && _savedScanCurrent && _selectedMonitor is not null;
         var primary = (Style)FindResource("PrimaryButtonStyle");
         var secondary = (Style)FindResource(typeof(Button));
         bool restorePreferred = _selectedMonitor?.CanRestore == true;

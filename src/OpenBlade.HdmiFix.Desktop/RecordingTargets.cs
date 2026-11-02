@@ -33,7 +33,7 @@ internal static class RecordingTargets
             if (matches.Length > 1) continue;
             var target = matches.SingleOrDefault() ?? new MonitorView(display.InstanceId, name,
                 "Connected", label, "Live connection", "This connection is available for read-only recording.", false, false, null);
-            targets.Add(target with { Name = name == "unknown" ? target.Name : name,
+            targets.Add(target with { Name = name.Equals("unknown", StringComparison.OrdinalIgnoreCase) ? target.Name : name,
                 ConnectionLabel = "Connected", CanPatch = false, CanRestore = false });
         }
         return targets.OrderBy(t => t.DisplayLabel, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -50,4 +50,39 @@ internal static class RecordingTargets
     internal static RecordingTargetChoice? Default(MonitorView? saved, IReadOnlyList<RecordingTargetChoice> choices) =>
         saved is null ? null : choices.FirstOrDefault(c => c.IsActive && c.Monitor.InstanceId.Equals(saved.InstanceId,
             StringComparison.OrdinalIgnoreCase)) ?? (choices.Any(c => c.IsActive) ? null : choices.FirstOrDefault());
+
+    internal static bool CanWaitForSaved(RecordingTargetChoice requested, RecordingTargetChoice? current,
+        bool explicitChoice, bool hasActiveChoices) => !requested.IsActive && current is { IsActive: false }
+            && requested.Monitor.InstanceId.Equals(current.Monitor.InstanceId, StringComparison.OrdinalIgnoreCase)
+            && (explicitChoice || !hasActiveChoices);
+
+    internal static string ReadFailure(LiveDisplayScan live) => live.Failure.Length != 0
+        ? DiagnosticValues.Status(live.Failure) : live.HasUnresolvedPaths ? "BindingIncomplete" : "";
+
+    internal static string FailureMessage(string failure) => failure == "Scan:Unavailable"
+        ? "The app couldn't refresh saved monitor information. Select Refresh to try again."
+        : failure == "LiveCapture:Busy"
+        ? "A previous display read is still finishing. Wait a moment, then select Refresh."
+        : "The app couldn't check active HDMI connections. Select Refresh to try again.";
+
+    internal static string Hint(MonitorView? saved, IReadOnlyList<RecordingTargetChoice> choices,
+        RecordingTargetChoice? selected, string failure)
+    {
+        if (selected?.IsActive != true && failure.Length != 0)
+        {
+            if (selected is not null && failure != "Scan:Unavailable")
+                return FailureMessage(failure) + " Or start recording to wait for readable data from this saved connection.";
+            if (choices.Any(c => c.IsActive))
+                return "Some connections could not be checked. Choose a listed connected HDMI monitor, or select Refresh.";
+            return FailureMessage(failure);
+        }
+        if (choices.Count == 0)
+            return "No monitor connections are available for recording. Select Refresh to check again.";
+        if (selected is null)
+            return saved is null ? "Choose a connected HDMI monitor to record."
+                : "No active connection matches the saved selection. Choose a connected HDMI monitor, or choose the saved connection to wait for it.";
+        return saved is null ? "Recording uses this HDMI connection."
+            : "Recording uses this connection only. Patch and Restore use the saved monitor above.";
+    }
+
 }
