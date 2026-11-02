@@ -3,6 +3,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using System.Windows.Markup;
+using System.Xml.Linq;
 using Xunit;
 
 namespace OpenBlade.HdmiFix.Desktop.Tests;
@@ -20,15 +22,14 @@ public sealed class RecordingPreflightWindowTests
         var thread = new Thread(() =>
         {
             Exception? failure = null;
-            App? app = null;
+            Application? app = null;
             MainWindow? window = null;
             string root = Path.Combine(Path.GetTempPath(), "OpenBlade-preflight-window-" + Guid.NewGuid().ToString("N"));
             try
             {
                 dispatcher = Dispatcher.CurrentDispatcher;
                 SetPhase("Initializing WPF application");
-                app = new App();
-                app.InitializeComponent();
+                app = new Application { Resources = LoadProductionResources() };
                 app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 dispatcher.BeginInvoke(new Action(async () =>
                 {
@@ -129,6 +130,19 @@ public sealed class RecordingPreflightWindowTests
         }
     }
 
+    private static ResourceDictionary LoadProductionResources()
+    {
+        // Link the production resource source without constructing App: its
+        // queued OnStartup would open a second window or an elevation dialog.
+        using Stream source = typeof(RecordingPreflightWindowTests).Assembly
+            .GetManifestResourceStream("ProductionApp.xaml")!;
+        XNamespace ns = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+        XElement resources = XDocument.Load(source).Root!.Element(ns + "Application.Resources")!;
+        var dictionary = new XElement(ns + "ResourceDictionary",
+            new XAttribute(XNamespace.Xmlns + "x", "http://schemas.microsoft.com/winfx/2006/xaml"),
+            resources.Elements());
+        return (ResourceDictionary)XamlReader.Parse(dictionary.ToString());
+    }
     private static T Control<T>(Window window, string name) where T : FrameworkElement =>
         Assert.IsType<T>(window.FindName(name));
 
